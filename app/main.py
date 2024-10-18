@@ -1,13 +1,31 @@
 import socket  # noqa: F401
-import select
 import selectors
+from app.resp_parser import RespParser
+from app.encoder import RespEncoder
+from app.commands import Command
+
+cmd = Command(RespEncoder())
 
 sel = selectors.DefaultSelector()
-response = b'+PONG\r\n'
+TEM = b'\r\n'
 
 def read(sock: socket.socket, mask):
-    if sock.recv(1024):
-        sock.sendall(response)
+    parser = RespParser()
+    recvd = sock.recv(1024).decode()
+
+    if not recvd:
+        return
+    parser.set_type(recvd[0])
+    parsed_msg = parser.parse(recvd)
+    if parsed_msg is None:
+        while recvd := sock.recv(1024).decode():
+            parsed_msg = parser.parse(recvd)
+            if parsed_msg is not None:
+                break
+
+    # print('parsed_msg', parsed_msg)
+    to_send = cmd.handle_cmd(*parsed_msg)
+    sock.sendall(to_send)
 
 def accept(sock: socket.socket, mask):
     conn, _ = sock.accept()
