@@ -27,7 +27,7 @@ class RespEncoder:
     
     @staticmethod
     def null_bulk_str():
-        return NULL_BULK_STR + BOUNDARY
+        return (NULL_BULK_STR + BOUNDARY).encode()
     
 
 if __name__ == "__main__":

@@ -7,3 +7,5 @@ class RespType(StrEnum):
     STRING = '+'
     BULK_STRING = '$'
     ARRAY = '*'
+
+SET_ARGS = ['px']

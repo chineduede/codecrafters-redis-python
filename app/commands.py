@@ -2,6 +2,7 @@ from enum import StrEnum
 
 from app.encoder import RespEncoder, EncodedMessageType
 from app.storage import RedisDB
+from app.constants import SET_ARGS
 
 class CommandEnum(StrEnum):
     ECHO = 'echo'
@@ -38,25 +39,38 @@ class Command:
             case CommandEnum.GET:
                 return self.handle_get_cmd(*args)
             
-    def verify_args_len(self, _type, num, *args):
+    def verify_args_len(self, _type, num, args):
         if len(args) < num:
             raise InvalidCommandCall(f'{_type.upper()} cmd must be called with enough argument(s). Called with only {num} argument(s).')
 
     def handle_get_cmd(self, *args):
-        self.verify_args_len(CommandEnum.GET, 2, *args)
+        self.verify_args_len(CommandEnum.GET, 2, args)
         msg = self.storage.get(args[1])
+        # print('**msg**', msg)
         if msg is None:
             return self.encoder.encode('', EncodedMessageType.NULL_STR)
         return self.encoder.encode(msg, EncodedMessageType.BULK_STRING)
     
+    def parse_set_args(self, args):
+        # list of args for SET cmd, we return a dict
+        args_dict = {}
+        other_args: list = [x.lower() if isinstance(x, str) else x for x in args[3:]]
+        for cmd in SET_ARGS:
+            if cmd in other_args:
+                idx = other_args.index(cmd)
+                args_dict[cmd] = other_args[idx+1]
+        return args_dict
+
+    
     def handle_set_cmd(self, *args):
-        self.verify_args_len(CommandEnum.SET, 3, *args)
-        resp = self.storage.set(args[1], args[2])
+        self.verify_args_len(CommandEnum.SET, 3, args)
+        other_args = self.parse_set_args(args)
+        resp = self.storage.set(args[1], args[2], **other_args)
         return self.encoder.encode(resp, EncodedMessageType.SIMPLE_STRING)
 
 
     def handle_echo_cmd(self, *args):
-        self.verify_args_len(CommandEnum.ECHO, 2, *args)
+        self.verify_args_len(CommandEnum.ECHO, 2, args)
         encoded_msg = self.encoder.encode(args[1], EncodedMessageType.BULK_STRING)
         if encoded_msg is None:
             raise CantEncodeMessage(f'Cant encode message.')
