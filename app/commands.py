@@ -3,12 +3,14 @@ from enum import StrEnum
 from app.encoder import RespEncoder, EncodedMessageType
 from app.storage import RedisDB
 from app.constants import SET_ARGS
+from app.namespace import ConfigNamespace
 
 class CommandEnum(StrEnum):
     ECHO = 'echo'
     PING = 'ping'
     SET = 'set'
     GET = 'get'
+    CONFIG = 'config'
 
 class InvalidCommandCall(Exception):
     pass
@@ -38,10 +40,27 @@ class Command:
                 return self.handle_set_cmd(*args)
             case CommandEnum.GET:
                 return self.handle_get_cmd(*args)
+            case CommandEnum.CONFIG:
+                return self.handle_config_cmd(*args)
             
     def verify_args_len(self, _type, num, args):
         if len(args) < num:
             raise InvalidCommandCall(f'{_type.upper()} cmd must be called with enough argument(s). Called with only {num} argument(s).')
+
+    def handle_config_cmd(self, *args):
+        self.verify_args_len(CommandEnum.CONFIG, 3, args)
+        config_type = args[1]
+        if not isinstance(config_type, str):
+            raise InvalidCommandCall(f'Wrong type of Config, {type(config_type)}')
+        else:
+            config_type = config_type.lower()
+
+        if config_type == 'get':
+            return self.handle_config_get(args[2])
+
+    def handle_config_get(self, key):
+        value = getattr(ConfigNamespace, key, None)
+        return self.encoder.encode([key, value], EncodedMessageType.ARRAY)
 
     def handle_get_cmd(self, *args):
         self.verify_args_len(CommandEnum.GET, 2, args)

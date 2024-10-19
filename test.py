@@ -1,4 +1,4 @@
 from app.encoder import *
 
 encoder = RespEncoder()
-print(RespEncoder.null_bulk_str())
+print(encoder.encode([['red', 'blue'], ['orange']], EncodedMessageType.ARRAY, encode_type = EncodedMessageType.SIMPLE_STRING))

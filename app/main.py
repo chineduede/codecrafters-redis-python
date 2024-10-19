@@ -1,9 +1,15 @@
 import socket  # noqa: F401
 import selectors
+import argparse
+
 from app.resp_parser import RespParser
 from app.commands import Command
+from app.namespace import ConfigNamespace
 
 cmd = Command()
+parser = argparse.ArgumentParser('Redis')
+parser.add_argument("--dir")
+parser.add_argument("--dbfilename")
 
 sel = selectors.DefaultSelector()
 TEM = b'\r\n'
@@ -49,4 +55,5 @@ def main():
                 cb(key.fileobj, mask)
 
 if __name__ == "__main__":
+    parser.parse_known_args(namespace=ConfigNamespace)[0]
     main()
