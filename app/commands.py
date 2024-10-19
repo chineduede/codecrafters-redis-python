@@ -46,7 +46,6 @@ class Command:
     def handle_get_cmd(self, *args):
         self.verify_args_len(CommandEnum.GET, 2, args)
         msg = self.storage.get(args[1])
-        # print('**msg**', msg)
         if msg is None:
             return self.encoder.encode('', EncodedMessageType.NULL_STR)
         return self.encoder.encode(msg, EncodedMessageType.BULK_STRING)
