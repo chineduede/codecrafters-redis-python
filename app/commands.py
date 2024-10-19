@@ -1,10 +1,13 @@
 from enum import StrEnum
 
 from app.encoder import RespEncoder, EncodedMessageType
+from app.storage import RedisDB
 
 class CommandEnum(StrEnum):
     ECHO = 'echo'
     PING = 'ping'
+    SET = 'set'
+    GET = 'get'
 
 class InvalidCommandCall(Exception):
     pass
@@ -14,8 +17,9 @@ class CantEncodeMessage(Exception):
 
 class Command:
 
-    def __init__(self, encoder: RespEncoder) -> None:
-        self.encoder = encoder
+    def __init__(self, *, encoder: RespEncoder = None, storage: RedisDB = None) -> None:
+        self.encoder = RespEncoder() if encoder is None else encoder
+        self.storage = RedisDB() if storage is None else storage
 
     def handle_cmd(self, *args):
         if len(args) < 1:
@@ -29,10 +33,30 @@ class Command:
                 return self.handle_echo_cmd(*args)
             case CommandEnum.PING:
                 return self.handle_ping_cmd()
+            case CommandEnum.SET:
+                return self.handle_set_cmd(*args)
+            case CommandEnum.GET:
+                return self.handle_get_cmd(*args)
+            
+    def verify_args_len(self, _type, num, *args):
+        if len(args) < num:
+            raise InvalidCommandCall(f'{_type.upper()} cmd must be called with enough argument(s). Called with only {num} argument(s).')
+
+    def handle_get_cmd(self, *args):
+        self.verify_args_len(CommandEnum.GET, 2, *args)
+        msg = self.storage.get(args[1])
+        if msg is None:
+            return self.encoder.encode('', EncodedMessageType.NULL_STR)
+        return self.encoder.encode(msg, EncodedMessageType.BULK_STRING)
+    
+    def handle_set_cmd(self, *args):
+        self.verify_args_len(CommandEnum.SET, 3, *args)
+        resp = self.storage.set(args[1], args[2])
+        return self.encoder.encode(resp, EncodedMessageType.SIMPLE_STRING)
+
 
     def handle_echo_cmd(self, *args):
-        if len(args) < 2:
-            raise InvalidCommandCall(f'Echo cmd must be called with argument.')
+        self.verify_args_len(CommandEnum.ECHO, 2, *args)
         encoded_msg = self.encoder.encode(args[1], EncodedMessageType.BULK_STRING)
         if encoded_msg is None:
             raise CantEncodeMessage(f'Cant encode message.')

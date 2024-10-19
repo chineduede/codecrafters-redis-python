@@ -1,10 +1,9 @@
 import socket  # noqa: F401
 import selectors
 from app.resp_parser import RespParser
-from app.encoder import RespEncoder
 from app.commands import Command
 
-cmd = Command(RespEncoder())
+cmd = Command()
 
 sel = selectors.DefaultSelector()
 TEM = b'\r\n'
@@ -15,6 +14,7 @@ def read(sock: socket.socket, mask):
 
     if not recvd:
         return
+
     parser.set_type(recvd[0])
     parsed_msg = parser.parse(recvd)
     if parsed_msg is None:
