@@ -9,7 +9,7 @@ from app.namespace import ConfigNamespace
 parser = argparse.ArgumentParser('Redis')
 parser.add_argument("--dir")
 parser.add_argument("--dbfilename")
-parser.add_argument ("--port", default=6379, type=int)
+parser.add_argument ("-p", "--port", default=6379, type=int)
 
 sel = selectors.DefaultSelector()
 TEM = b'\r\n'

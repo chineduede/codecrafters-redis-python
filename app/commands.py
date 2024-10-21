@@ -13,6 +13,7 @@ class CommandEnum(StrEnum):
     GET = 'get'
     CONFIG = 'config'
     KEYS = 'keys'
+    INFO = 'info'
 
 class InvalidCommandCall(Exception):
     pass
@@ -46,11 +47,16 @@ class Command:
                 return self.handle_config_cmd(*args)
             case CommandEnum.KEYS:
                 return self.handle_keys(*args)
+            case CommandEnum.INFO:
+                return self.handle_info_cmd(*args)
 
             
     def verify_args_len(self, _type, num, args):
         if len(args) < num:
             raise InvalidCommandCall(f'{_type.upper()} cmd must be called with enough argument(s). Called with only {num} argument(s).')
+
+    def handle_info_cmd(self, *args):
+        return self.encoder.encode('role:master', EncodedMessageType.BULK_STRING)
 
     def handle_keys(self, *args):
         self.verify_args_len(CommandEnum.KEYS, 2, args)
