@@ -1,3 +1,4 @@
+import re
 from enum import StrEnum
 
 from app.encoder import RespEncoder, EncodedMessageType
@@ -11,6 +12,7 @@ class CommandEnum(StrEnum):
     SET = 'set'
     GET = 'get'
     CONFIG = 'config'
+    KEYS = 'keys'
 
 class InvalidCommandCall(Exception):
     pass
@@ -42,10 +44,19 @@ class Command:
                 return self.handle_get_cmd(*args)
             case CommandEnum.CONFIG:
                 return self.handle_config_cmd(*args)
+            case CommandEnum.KEYS:
+                return self.handle_keys(*args)
+
             
     def verify_args_len(self, _type, num, args):
         if len(args) < num:
             raise InvalidCommandCall(f'{_type.upper()} cmd must be called with enough argument(s). Called with only {num} argument(s).')
+
+    def handle_keys(self, *args):
+        self.verify_args_len(CommandEnum.KEYS, 2, args)
+        regex = re.compile(re.escape(args[1]).replace(r'\*', '.*').replace(r'\?', '.'))
+        matches = [s for s in self.storage.get_all_keys() if regex.match(s)]
+        return self.encoder.encode(matches, EncodedMessageType.ARRAY)
 
     def handle_config_cmd(self, *args):
         self.verify_args_len(CommandEnum.CONFIG, 3, args)

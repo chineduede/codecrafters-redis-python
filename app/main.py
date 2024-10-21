@@ -6,7 +6,6 @@ from app.resp_parser import RespParser
 from app.commands import Command
 from app.namespace import ConfigNamespace
 
-cmd = Command()
 parser = argparse.ArgumentParser('Redis')
 parser.add_argument("--dir")
 parser.add_argument("--dbfilename")
@@ -14,7 +13,7 @@ parser.add_argument("--dbfilename")
 sel = selectors.DefaultSelector()
 TEM = b'\r\n'
 
-def read(sock: socket.socket, mask):
+def read(sock: socket.socket, mask, cmd_parser: Command):
     parser = RespParser()
     recvd = sock.recv(1024).decode()
 
@@ -30,18 +29,18 @@ def read(sock: socket.socket, mask):
                 break
 
     # print('parsed_msg', parsed_msg)
-    to_send = cmd.handle_cmd(*parsed_msg)
+    to_send = cmd_parser.handle_cmd(*parsed_msg)
     sock.sendall(to_send)
 
-def accept(sock: socket.socket, mask):
+def accept(sock: socket.socket, mask, cmd_parser):
     conn, _ = sock.accept()
     conn.setblocking(False)
     sel.register(conn, selectors.EVENT_READ, read)
 
-def main():
+def main(cmd_parser: Command):
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!")
-
+    cmd_parser.storage.load_db()
     with socket.create_server(("localhost", 6379), reuse_port=True) as server:
         server.listen(100)
         server.setblocking(False)
@@ -52,8 +51,9 @@ def main():
             
             for key, mask in events:
                 cb = key.data
-                cb(key.fileobj, mask)
+                cb(key.fileobj, mask, cmd_parser)
 
 if __name__ == "__main__":
     parser.parse_known_args(namespace=ConfigNamespace)[0]
-    main()
+    cmd = Command()
+    main(cmd)
