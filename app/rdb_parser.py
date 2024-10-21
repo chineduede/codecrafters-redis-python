@@ -56,18 +56,18 @@ class RDBParser:
     def read_hash_table(self):
         maps_read = 0
         while True:
-            if maps_read >= (self.hash_table_sizes['hash-table-size'] + self.hash_table_sizes['hash-table-expire-size']):
+            if maps_read >= self.hash_table_sizes['hash-table-size']:
                 break
             obj_to_store = {}
             has_expiriy = self.buffer.read(1)
             value_t = has_expiriy
-            if has_expiriy == '\xFD':
+            if has_expiriy == b'\xFD':
                 ttl = int.from_bytes(self.buffer.read(4), 'little')
-                obj_to_store['expires'] = ttl * 1000
-                value_t = self.buffer.read(1)
-            elif has_expiriy == '\xFC':
-                ttl = int.from_bytes(self.buffer.read(8), 'little')
                 obj_to_store['expires'] = ttl
+                value_t = self.buffer.read(1)
+            elif has_expiriy == b'\xFC':
+                ttl = int.from_bytes(self.buffer.read(8), 'little')
+                obj_to_store['expires'] = ttl // 1000
                 value_t = self.buffer.read(1)
 
             # read key

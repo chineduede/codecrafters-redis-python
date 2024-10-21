@@ -22,11 +22,14 @@ class RedisDB:
 
     def get(self, key):
         obj = self.store.get(key)
-        expired = 'expires' in obj and obj['expires'] < datetime.now()
+        if not obj:
+            return None
+        expired = 'expires' in obj and obj['expires'] < datetime.now().timestamp()
 
         if not expired:
             return obj['value']
-        return None
+        else:
+            del self.store[key]
     
     def set(self, key, value, **kwargs):
         obj = {
@@ -35,7 +38,7 @@ class RedisDB:
 
         if 'px' in kwargs:
             expires_in = datetime.now() + timedelta(milliseconds=int(kwargs['px']))
-            obj['expires'] = expires_in
+            obj['expires'] = expires_in.timestamp()
 
         self.store[key] = obj
         return 'OK'
