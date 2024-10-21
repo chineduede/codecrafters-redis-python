@@ -9,6 +9,7 @@ from app.namespace import ConfigNamespace
 parser = argparse.ArgumentParser('Redis')
 parser.add_argument("--dir")
 parser.add_argument("--dbfilename")
+parser.add_argument ("--port", default=6379, type=int)
 
 sel = selectors.DefaultSelector()
 TEM = b'\r\n'
@@ -41,7 +42,7 @@ def main(cmd_parser: Command):
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!")
     cmd_parser.storage.load_db()
-    with socket.create_server(("localhost", 6379), reuse_port=True) as server:
+    with socket.create_server(("localhost", ConfigNamespace.port), reuse_port=True) as server:
         server.listen(100)
         server.setblocking(False)
         sel.register(server, selectors.EVENT_READ, accept)
