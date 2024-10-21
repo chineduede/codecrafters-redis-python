@@ -40,6 +40,17 @@ class RespParser:
         self.misc = {}
         self.arr_stack = []
 
+    def consume_until_boundary(self, len_to_consume = None):
+        end_idx = self.buffer.find(BOUNDARY, self.pos)
+        if len_to_consume is not None:
+            end_idx = len_to_consume
+        if end_idx == -1:
+            return
+        val = self.buffer[self.pos:end_idx]
+        self.pos += len(val)
+        return val
+            
+
     def add_ele_to_arr(self, ele):
         top_arr = self.arr_stack[-1]
         top_arr['items'].append(ele)
@@ -66,8 +77,10 @@ class RespParser:
                     # validate data here
                     break
             elif self.current_state == States.READ_STR_LEN:
-                length = int(self.buffer[self.pos])
-                self.incr()
+                length = self.consume_until_boundary()
+                if length is None:
+                    break
+                length = int(length)
                 self.consume_boundary()
                 # check if bulk_string plus boundary is in buffer
                 if self.buffer[self.pos + length: self.pos + length + 2] == BOUNDARY:
@@ -77,6 +90,9 @@ class RespParser:
                     break
             elif self.current_state == States.READ_STR:
                 bulk_str_len = self.misc['bulk_len']
+                bulk_str = self.consume_until_boundary(bulk_str_len)
+                if bulk_str is None:
+                    break
                 del self.misc['bulk_len']
                 bulk_str = self.buffer[self.pos: self.pos + bulk_str_len]
                 self.debug and print(f'Bulk string {bulk_str}')
@@ -90,23 +106,24 @@ class RespParser:
                     self.init()
                     return bulk_str
             elif self.current_state == States.READ_SMPL_STR:
-                boundary = self.buffer.find(BOUNDARY, self.pos)
-                if boundary == -1:
+                value = self.consume_until_boundary()
+                if value is None:
                     break
                 else:
-                    ss = self.buffer[self.pos : boundary]
-                    self.debug and print(f'Simple string {ss}')
+                    self.debug and print(f'Simple string {value}')
                     self.incr()
                     self.consume_boundary()
                     self.current_state = States.READ_TYPE
                     if self.arr_stack:
-                        self.add_ele_to_arr(ss)
+                        self.add_ele_to_arr(value)
                     elif self.buffer_type == RespType.STRING:
                         self.init()
-                        return ss
+                        return value
             elif self.current_state == States.READ_ARR_LEN:
-                no_of_items = int(self.buffer[self.pos])
-                self.incr()
+                no_of_items = self.consume_until_boundary()
+                if no_of_items is None:
+                    break
+                no_of_items = int(no_of_items)
                 self.consume_boundary()
                 self.arr_stack.append({'length' : no_of_items, 'items': []})
                 self.current_state = States.READ_ARR_ELE
@@ -145,3 +162,9 @@ class RespParser:
 # parser.set_type('+')
 # c2 = parser.parse('+World\r\n')
 # print('c2', c2)
+
+if __name__ == "__main__":
+    st = '*2\r\n$3\r\nGET\r\n$10\r\nstrawberry'
+    parser = RespParser()
+    parser.set_type(st[0])
+    print(parser.parse())
