@@ -10,6 +10,7 @@ parser = argparse.ArgumentParser('Redis')
 parser.add_argument("--dir")
 parser.add_argument("--dbfilename")
 parser.add_argument ("-p", "--port", default=6379, type=int)
+parser.add_argument("--replicaof")
 
 sel = selectors.DefaultSelector()
 TEM = b'\r\n'
@@ -41,7 +42,10 @@ def accept(sock: socket.socket, mask, cmd_parser):
 def main(cmd_parser: Command):
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!")
+
+    ConfigNamespace.set_server_type()
     cmd_parser.storage.load_db()
+
     with socket.create_server(("localhost", ConfigNamespace.port), reuse_port=True) as server:
         server.listen(100)
         server.setblocking(False)
