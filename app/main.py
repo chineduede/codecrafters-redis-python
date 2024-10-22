@@ -21,6 +21,8 @@ def read(sock: socket.socket, mask, cmd_parser: Command):
     recvd = sock.recv(1024).decode()
 
     if not recvd:
+        sel.unregister(sock)
+        sock.close()
         return
 
     parser.set_type(recvd[0])
@@ -40,23 +42,36 @@ def accept(sock: socket.socket, mask, cmd_parser):
     conn.setblocking(False)
     sel.register(conn, selectors.EVENT_READ, read)
 
+def handle_master_data(sock: socket.socket, mask, cmd_parser):
+    recvd = sock.recv(1024).decode()
+
+    if not recvd:
+        # Handle the case when the master server closes the connection
+        print("Lost connection to master server")
+        sel.unregister(sock)
+        sock.close()
+        return
+
+    # Here you can add logic to process the data received from the master
+    # e.g., syncing database updates from the master
+    print(f"Received from master: {recvd}")
+
 def connect_replica():
     host, port = ConfigNamespace.replicaof.split()
     encoder = RespEncoder()
     
-    with socket.create_connection((host, int(port)), source_address=(host, ConfigNamespace.port)) as conn:
-
+    conn = socket.create_connection((host, int(port)))
         # send PING cmd
-        ping_encoded = encoder.encode([CommandEnum.PING.upper()], EncodedMessageType.ARRAY)
-        if ping_encoded:
-            conn.sendall(ping_encoded)
+    ping_encoded = encoder.encode([CommandEnum.PING.upper()], EncodedMessageType.ARRAY)
+    if ping_encoded:
+        conn.sendall(ping_encoded)
+
+    conn.setblocking(False)
+    sel.register(conn, selectors.EVENT_READ, handle_master_data)
 
 def main(cmd_parser: Command):
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!")
-
-    if ConfigNamespace.is_replica():
-        connect_replica()
 
     cmd_parser.storage.load_db()
 
@@ -64,6 +79,9 @@ def main(cmd_parser: Command):
         server.listen(100)
         server.setblocking(False)
         sel.register(server, selectors.EVENT_READ, accept)
+
+        if ConfigNamespace.is_replica():
+            connect_replica()
 
         while True:
             events = sel.select()
