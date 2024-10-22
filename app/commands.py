@@ -56,7 +56,12 @@ class Command:
             raise InvalidCommandCall(f'{_type.upper()} cmd must be called with enough argument(s). Called with only {num} argument(s).')
 
     def handle_info_cmd(self, *args):
-        return self.encoder.encode(f'role:{ConfigNamespace.server_name}', EncodedMessageType.BULK_STRING)
+        return_vals = [
+            f'role:{ConfigNamespace.server_name}',
+            'master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb',
+            'master_repl_offset:0',
+        ]
+        return self.encoder.encode('\n'.join(return_vals), EncodedMessageType.BULK_STRING)
 
     def handle_keys(self, *args):
         self.verify_args_len(CommandEnum.KEYS, 2, args)
