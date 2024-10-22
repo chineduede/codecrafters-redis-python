@@ -6,8 +6,9 @@ from app.namespace import ConfigNamespace
 class HandShakeStates(IntEnum):
     INIT = 0
     AWAIT_PONG = 1
-    SEND_REPLCONF_1 = 2
-    END = 3
+    SEND_REPLCONF = 2
+    SEND_PSYNC = 3
+    END = 4
 
 class Handshake:
     state = HandShakeStates.INIT
@@ -15,18 +16,23 @@ class Handshake:
         pass
 
     @classmethod
-    def handle_stage(cls, data=None):
+    def handle_stage(cls, data=None | bytes):
         if cls.state == HandShakeStates.INIT:
             # initial state, send PING
             cls.state = HandShakeStates.AWAIT_PONG
-            return ENCODER.encode([CommandEnum.PING.upper()], EncodedMessageType.ARRAY)
+            return ENCODER.encode([CommandEnum.PING], EncodedMessageType.ARRAY)
         if cls.state == HandShakeStates.AWAIT_PONG and data is not None:
-            if data != 'PONG':
+            if data != b'PONG':
                 return
-            cls.state = HandShakeStates.SEND_REPLCONF_1
+            cls.state = HandShakeStates.SEND_REPLCONF
             return ENCODER.encode([CommandEnum.REPLCONF, 'listening-port', ConfigNamespace.port], EncodedMessageType.ARRAY)
-        if cls.state == HandShakeStates.SEND_REPLCONF_1 and data is not None:
-            if data != 'OK':
+        if cls.state == HandShakeStates.SEND_REPLCONF and data is not None:
+            if data != b'OK':
+                return
+            cls.state = HandShakeStates.SEND_PSYNC
+            return ENCODER.encode([CommandEnum.REPLCONF, 'capa', 'psync2'], EncodedMessageType.ARRAY)
+        if cls.state == HandShakeStates.SEND_PSYNC and data is not None:
+            if data != b'OK':
                 return
             cls.state = HandShakeStates.END
-            return ENCODER.encode([CommandEnum.REPLCONF, 'capa', 'psync2'], EncodedMessageType.ARRAY)
+            return ENCODER.encode([CommandEnum.PSYNC, '?', '-1'], EncodedMessageType.ARRAY)

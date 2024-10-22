@@ -3,10 +3,10 @@ import selectors
 import argparse
 
 from app.resp_parser import RespParser
-from app.commands import Command, CommandEnum
+from app.commands import Command
 from app.namespace import ConfigNamespace
-from app.encoder import ENCODER, EncodedMessageType
 from app.handshake import Handshake
+from app.util import decode
 
 parser = argparse.ArgumentParser('Redis')
 parser.add_argument("--dir")
@@ -23,7 +23,7 @@ def read(sock: socket.socket, mask, cmd_parser: Command):
     if parsed_msg is None:
         return
 
-    to_send = cmd_parser.handle_cmd(*parsed_msg)
+    to_send = cmd_parser.handle_cmd(*decode(parsed_msg))
     sock.sendall(to_send)
 
 def accept(sock: socket.socket, mask, cmd_parser):
@@ -37,6 +37,7 @@ def handle_replica_to_master():
 
 def handle_master_data(sock: socket.socket, mask, cmd_parser):
     parser = RespParser()
+    # print(parsed_msg)
     parsed_msg = parser.parse_all(sock, sel)
     if parsed_msg is None:
         return
@@ -49,11 +50,11 @@ def connect_replica():
     
     conn = socket.create_connection((host, int(port)))
     # send PING cmd
+    conn.setblocking(False)
     ping_encoded = Handshake.handle_stage()
     if ping_encoded:
         conn.sendall(ping_encoded)
 
-    conn.setblocking(False)
     sel.register(conn, selectors.EVENT_READ, handle_master_data)
 
 def main(cmd_parser: Command):
@@ -72,7 +73,7 @@ def main(cmd_parser: Command):
 
         while True:
             events = sel.select()
-            
+            # print(events)
             for key, mask in events:
                 cb = key.data
                 cb(key.fileobj, mask, cmd_parser)

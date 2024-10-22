@@ -1,5 +1,6 @@
 from enum import IntEnum
-from app.constants import BOUNDARY, RespType, NULL_BULK_STR
+from app.constants import BOUNDARY, STRING, ARRAY, BULK_STRING, NULL_BULK_STR
+from app.util import encode
 
 class EncodedMessageType(IntEnum):
     SIMPLE_STRING = 0
@@ -9,27 +10,27 @@ class EncodedMessageType(IntEnum):
 
 class RespEncoder:
 
-    def encode(self, message: str | list, _type: EncodedMessageType, **kwargs) -> bytes | None:
+    def encode(self, message: bytes | list[bytes], _type: EncodedMessageType, **kwargs) -> bytes | None:
         match _type:
             case EncodedMessageType.SIMPLE_STRING:
-                return self.encode_smpl_str(message)
+                return self.encode_smpl_str(encode(message))
             case EncodedMessageType.BULK_STRING:
-                return self.encode_bulk_str(message)
+                return self.encode_bulk_str(encode(message))
             case EncodedMessageType.NULL_STR:
                 return self.null_bulk_str()
             case EncodedMessageType.ARRAY:
-                return self.encode_array(message, **kwargs)
+                return self.encode_array(encode(message), **kwargs)
             case _:
                 return None
             
     def encode_smpl_str(self, message) -> bytes:
-        return f'{RespType.STRING}{message}{BOUNDARY}'.encode()
+        return STRING + message + BOUNDARY
             
     def encode_bulk_str(self, message) -> bytes:
-        return f'{RespType.BULK_STRING}{len(str(message))}{BOUNDARY}{message}{BOUNDARY}'.encode()
+        return BULK_STRING + str(len(message)).encode() + BOUNDARY + message + BOUNDARY
     
     def encode_array(self, array, *, encode_type = EncodedMessageType.BULK_STRING):
-        to_ret = [str(RespType.ARRAY).encode(), str(len(array)).encode(), BOUNDARY.encode()]
+        to_ret = [ARRAY, str(len(array)).encode(), BOUNDARY]
 
         for element in array:
             if isinstance(element, list):
@@ -46,7 +47,7 @@ class RespEncoder:
             
     @staticmethod
     def null_bulk_str():
-        return (NULL_BULK_STR + BOUNDARY).encode()
+        return NULL_BULK_STR + BOUNDARY
     
 
 ENCODER = RespEncoder()

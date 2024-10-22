@@ -2,7 +2,7 @@ from enum import IntEnum
 from socket import socket
 from selectors import BaseSelector
 
-from app.constants import BOUNDARY, RespType
+from app.constants import BOUNDARY, STRING, BULK_STRING, ARRAY
 
 class WrongMessage(Exception):
     pass
@@ -23,33 +23,30 @@ class RespParser:
     def __init__(self, *, debug=False) -> None:
         self.init()
         self.debug = debug
-        
-    def set_type(self, buffer_type):
-        self.buffer_type = buffer_type
-        return self.buffer_type
     
     def incr(self):
         self.pos +=1
     
     def consume_boundary(self):
-        if self.buffer[self.pos] =='\r' and self.buffer[self.pos + 1] == '\n':
+        if self.buffer[self.pos:self.pos+1] == b'\r' and self.buffer[self.pos + 1:self.pos+2] == b'\n':
             self.pos += 2
 
     def init(self):
-        self.buffer = ''
-        self.buffer_type = None
+        self.buffer = b''
+        self.buffer_type: bytes = None
         self.pos = 0
         self.current_state = States.READ_TYPE
         self.misc = {}
         self.arr_stack = []
 
     def consume_until_boundary(self, len_to_consume = None):
-        end_idx = self.buffer.find(BOUNDARY, self.pos)
-        if len_to_consume is not None:
-            end_idx = len_to_consume
-        if end_idx == -1:
-            return
-        val = self.buffer[self.pos:end_idx]
+        if len_to_consume is None:
+            end_idx = self.buffer.find(BOUNDARY, self.pos)
+            if end_idx == -1:
+                return
+            val = self.buffer[self.pos:end_idx]
+        else:
+            val = self.buffer[self.pos:self.pos+len_to_consume]
         self.pos += len(val)
         return val
             
@@ -60,38 +57,38 @@ class RespParser:
         self.current_state = States.READ_ARR_ELE
 
     def parse_all(self, sock: socket, selector: BaseSelector | None = None):
-        recvd = sock.recv(1024).decode()
+        recvd = sock.recv(1024)
         if not recvd:
             if selector:
                 selector.unregister(sock)
             sock.close()
             return
-        
-        self.set_type(recvd[0])
+
         parsed_msg = self.parse(recvd)
+        self.debug and print('***', recvd)
         if parsed_msg is None:
-            while recvd := sock.recv(1024).decode():
+            while recvd := sock.recv(1024):
                 parsed_msg = parser.parse(recvd)
                 if parsed_msg is not None:
                     break
         return parsed_msg
 
-    def parse(self, data: str):
+    def parse(self, data: bytes):
         if self.buffer_type is None:
-            raise WrongCallOrder('Call set_type method with the first byte of the data before calling parse.')
+            self.buffer_type = data[:1]
         self.buffer += data
 
         while True:
             
             if self.current_state == States.READ_TYPE:
                 if self.pos < len(self.buffer):
-                    data_type = self.buffer[self.pos]
+                    data_type = self.buffer[self.pos:self.pos+1]
                     self.incr()
-                    if data_type == RespType.BULK_STRING:
+                    if data_type == BULK_STRING:
                         self.current_state = States.READ_STR_LEN
-                    elif data_type == RespType.STRING:
+                    elif data_type == STRING:
                         self.current_state = States.READ_SMPL_STR
-                    elif data_type == RespType.ARRAY:
+                    elif data_type == ARRAY:
                         self.current_state = States.READ_ARR_LEN
                 else:
                     # validate data here
@@ -114,7 +111,6 @@ class RespParser:
                 if bulk_str is None:
                     break
                 del self.misc['bulk_len']
-                bulk_str = self.buffer[self.pos: self.pos + bulk_str_len]
                 self.debug and print(f'Bulk string {bulk_str}')
                 self.consume_boundary()
                 self.current_state = States.READ_TYPE
@@ -122,7 +118,7 @@ class RespParser:
                 if self.arr_stack:
                     self.add_ele_to_arr(bulk_str)
                 # initial type is string, we can return
-                elif self.buffer_type == RespType.BULK_STRING:
+                elif self.buffer_type == BULK_STRING:
                     self.init()
                     return bulk_str
             elif self.current_state == States.READ_SMPL_STR:
@@ -136,7 +132,7 @@ class RespParser:
                     self.current_state = States.READ_TYPE
                     if self.arr_stack:
                         self.add_ele_to_arr(value)
-                    elif self.buffer_type == RespType.STRING:
+                    elif self.buffer_type == STRING:
                         self.init()
                         return value
             elif self.current_state == States.READ_ARR_LEN:
@@ -161,7 +157,7 @@ class RespParser:
                             self.current_state = States.READ_ARR_ELE
                         else:
                             arr = self.arr_stack.pop()
-                            if self.buffer_type == RespType.ARRAY:
+                            if self.buffer_type == ARRAY:
                                 self.init()
                                 return arr['items']
                     else:

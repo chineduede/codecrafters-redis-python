@@ -15,6 +15,7 @@ class CommandEnum(StrEnum):
     KEYS = 'keys'
     INFO = 'info'
     REPLCONF = 'replconf'
+    PSYNC = 'psync'
 
 class InvalidCommandCall(Exception):
     pass
@@ -52,11 +53,17 @@ class Command:
                 return self.handle_info_cmd(*args)
             case CommandEnum.REPLCONF:
                 return self.handle_replconf(*args)
+            case CommandEnum.PSYNC:
+                return self.handle_psync_cmd(*args)
 
             
     def verify_args_len(self, _type, num, args):
         if len(args) < num:
             raise InvalidCommandCall(f'{_type.upper()} cmd must be called with enough argument(s). Called with only {num} argument(s).')
+
+    def handle_psync_cmd(self, *args):
+        self.verify_args_len(CommandEnum.PSYNC, 2, args)
+        return self.encoder.encode('FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0', EncodedMessageType.SIMPLE_STRING)
 
     def handle_replconf(self, *args):
         self.verify_args_len(CommandEnum.REPLCONF, 2, args)
