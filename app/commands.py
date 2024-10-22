@@ -57,7 +57,7 @@ class Command:
 
     def handle_info_cmd(self, *args):
         return_vals = [
-            f'role:{ConfigNamespace.server_name}',
+            f'role:{ConfigNamespace.server_type}',
             'master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb',
             'master_repl_offset:0',
         ]

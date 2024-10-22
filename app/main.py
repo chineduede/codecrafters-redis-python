@@ -3,8 +3,9 @@ import selectors
 import argparse
 
 from app.resp_parser import RespParser
-from app.commands import Command
+from app.commands import Command, CommandEnum
 from app.namespace import ConfigNamespace
+from app.encoder import RespEncoder, EncodedMessageType
 
 parser = argparse.ArgumentParser('Redis')
 parser.add_argument("--dir")
@@ -39,11 +40,24 @@ def accept(sock: socket.socket, mask, cmd_parser):
     conn.setblocking(False)
     sel.register(conn, selectors.EVENT_READ, read)
 
+def connect_replica():
+    host, port = ConfigNamespace.replicaof.split()
+    encoder = RespEncoder()
+    
+    with socket.create_connection((host, int(port)), source_address=(host, ConfigNamespace.port)) as conn:
+
+        # send PING cmd
+        ping_encoded = encoder.encode([CommandEnum.PING.upper()], EncodedMessageType.ARRAY)
+        if ping_encoded:
+            conn.sendall(ping_encoded)
+
 def main(cmd_parser: Command):
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!")
 
-    ConfigNamespace.set_server_type()
+    if ConfigNamespace.is_replica():
+        connect_replica()
+
     cmd_parser.storage.load_db()
 
     with socket.create_server(("localhost", ConfigNamespace.port), reuse_port=True) as server:
@@ -60,5 +74,6 @@ def main(cmd_parser: Command):
 
 if __name__ == "__main__":
     parser.parse_known_args(namespace=ConfigNamespace)[0]
+    ConfigNamespace.set_server_type()
     cmd = Command()
     main(cmd)

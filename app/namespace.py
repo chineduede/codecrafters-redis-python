@@ -1,7 +1,11 @@
 class ConfigNamespace:
-    server_name = 'master'
+    server_type = 'master'
 
     @staticmethod
     def set_server_type():
         if hasattr(ConfigNamespace, 'replicaof') and getattr(ConfigNamespace, 'replicaof', None):
-            ConfigNamespace.server_name = 'slave'
+            ConfigNamespace.server_type = 'slave'
+
+    @staticmethod
+    def is_replica():
+        return ConfigNamespace.server_type == 'slave'
