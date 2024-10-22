@@ -1,7 +1,7 @@
 import re
 from enum import StrEnum
 
-from app.encoder import RespEncoder, EncodedMessageType
+from app.encoder import RespEncoder, EncodedMessageType, ENCODER
 from app.storage import RedisDB
 from app.constants import SET_ARGS
 from app.namespace import ConfigNamespace
@@ -14,6 +14,7 @@ class CommandEnum(StrEnum):
     CONFIG = 'config'
     KEYS = 'keys'
     INFO = 'info'
+    REPLCONF = 'replconf'
 
 class InvalidCommandCall(Exception):
     pass
@@ -24,7 +25,7 @@ class CantEncodeMessage(Exception):
 class Command:
 
     def __init__(self, *, encoder: RespEncoder = None, storage: RedisDB = None) -> None:
-        self.encoder = RespEncoder() if encoder is None else encoder
+        self.encoder = ENCODER
         self.storage = RedisDB() if storage is None else storage
 
     def handle_cmd(self, *args):
@@ -49,11 +50,17 @@ class Command:
                 return self.handle_keys(*args)
             case CommandEnum.INFO:
                 return self.handle_info_cmd(*args)
+            case CommandEnum.REPLCONF:
+                return self.handle_replconf(*args)
 
             
     def verify_args_len(self, _type, num, args):
         if len(args) < num:
             raise InvalidCommandCall(f'{_type.upper()} cmd must be called with enough argument(s). Called with only {num} argument(s).')
+
+    def handle_replconf(self, *args):
+        self.verify_args_len(CommandEnum.REPLCONF, 2, args)
+        return self.encoder.encode('OK', EncodedMessageType.SIMPLE_STRING)
 
     def handle_info_cmd(self, *args):
         return_vals = [

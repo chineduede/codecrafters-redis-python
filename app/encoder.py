@@ -26,7 +26,7 @@ class RespEncoder:
         return f'{RespType.STRING}{message}{BOUNDARY}'.encode()
             
     def encode_bulk_str(self, message) -> bytes:
-        return f'{RespType.BULK_STRING}{len(message)}{BOUNDARY}{message}{BOUNDARY}'.encode()
+        return f'{RespType.BULK_STRING}{len(str(message))}{BOUNDARY}{message}{BOUNDARY}'.encode()
     
     def encode_array(self, array, *, encode_type = EncodedMessageType.BULK_STRING):
         to_ret = [str(RespType.ARRAY).encode(), str(len(array)).encode(), BOUNDARY.encode()]
@@ -49,6 +49,6 @@ class RespEncoder:
         return (NULL_BULK_STR + BOUNDARY).encode()
     
 
-if __name__ == "__main__":
-    encoder = RespEncoder()
-    print(encoder.encode(['red', 'blue'], EncodedMessageType.ARRAY))
+ENCODER = RespEncoder()
+# if __name__ == "__main__":
+    # print(encoder.encode(['red', 'blue'], EncodedMessageType.ARRAY))

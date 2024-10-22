@@ -1,4 +1,7 @@
 from enum import IntEnum
+from socket import socket
+from selectors import BaseSelector
+
 from app.constants import BOUNDARY, RespType
 
 class WrongMessage(Exception):
@@ -55,6 +58,23 @@ class RespParser:
         top_arr = self.arr_stack[-1]
         top_arr['items'].append(ele)
         self.current_state = States.READ_ARR_ELE
+
+    def parse_all(self, sock: socket, selector: BaseSelector | None = None):
+        recvd = sock.recv(1024).decode()
+        if not recvd:
+            if selector:
+                selector.unregister(sock)
+            sock.close()
+            return
+        
+        self.set_type(recvd[0])
+        parsed_msg = self.parse(recvd)
+        if parsed_msg is None:
+            while recvd := sock.recv(1024).decode():
+                parsed_msg = parser.parse(recvd)
+                if parsed_msg is not None:
+                    break
+        return parsed_msg
 
     def parse(self, data: str):
         if self.buffer_type is None:

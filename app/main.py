@@ -5,7 +5,8 @@ import argparse
 from app.resp_parser import RespParser
 from app.commands import Command, CommandEnum
 from app.namespace import ConfigNamespace
-from app.encoder import RespEncoder, EncodedMessageType
+from app.encoder import ENCODER, EncodedMessageType
+from app.handshake import Handshake
 
 parser = argparse.ArgumentParser('Redis')
 parser.add_argument("--dir")
@@ -18,22 +19,10 @@ TEM = b'\r\n'
 
 def read(sock: socket.socket, mask, cmd_parser: Command):
     parser = RespParser()
-    recvd = sock.recv(1024).decode()
-
-    if not recvd:
-        sel.unregister(sock)
-        sock.close()
+    parsed_msg = parser.parse_all(sock, sel)
+    if parsed_msg is None:
         return
 
-    parser.set_type(recvd[0])
-    parsed_msg = parser.parse(recvd)
-    if parsed_msg is None:
-        while recvd := sock.recv(1024).decode():
-            parsed_msg = parser.parse(recvd)
-            if parsed_msg is not None:
-                break
-
-    # print('parsed_msg', parsed_msg)
     to_send = cmd_parser.handle_cmd(*parsed_msg)
     sock.sendall(to_send)
 
@@ -42,27 +31,25 @@ def accept(sock: socket.socket, mask, cmd_parser):
     conn.setblocking(False)
     sel.register(conn, selectors.EVENT_READ, read)
 
+def handle_replica_to_master():
+    pass
+
+
 def handle_master_data(sock: socket.socket, mask, cmd_parser):
-    recvd = sock.recv(1024).decode()
-
-    if not recvd:
-        # Handle the case when the master server closes the connection
-        print("Lost connection to master server")
-        sel.unregister(sock)
-        sock.close()
+    parser = RespParser()
+    parsed_msg = parser.parse_all(sock, sel)
+    if parsed_msg is None:
         return
-
-    # Here you can add logic to process the data received from the master
-    # e.g., syncing database updates from the master
-    print(f"Received from master: {recvd}")
+    res = Handshake.handle_stage(parsed_msg)
+    if res:
+        sock.sendall(res)
 
 def connect_replica():
     host, port = ConfigNamespace.replicaof.split()
-    encoder = RespEncoder()
     
     conn = socket.create_connection((host, int(port)))
-        # send PING cmd
-    ping_encoded = encoder.encode([CommandEnum.PING.upper()], EncodedMessageType.ARRAY)
+    # send PING cmd
+    ping_encoded = Handshake.handle_stage()
     if ping_encoded:
         conn.sendall(ping_encoded)
 
