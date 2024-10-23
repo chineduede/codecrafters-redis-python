@@ -56,8 +56,10 @@ class RespParser:
         top_arr['items'].append(ele)
         self.current_state = States.READ_ARR_ELE
 
-    def parse_all(self, sock: socket, selector: BaseSelector | None = None):
+    def parse_all(self, sock: socket, selector: BaseSelector | None = None, msg_to_propagate: list[bytes] | None = None):
         recvd = sock.recv(1024)
+        if msg_to_propagate is not None:
+            msg_to_propagate.append(recvd)
         if not recvd:
             if selector:
                 selector.unregister(sock)
@@ -69,6 +71,8 @@ class RespParser:
         if parsed_msg is None:
             while recvd := sock.recv(1024):
                 parsed_msg = parser.parse(recvd)
+                if msg_to_propagate is not None:
+                    msg_to_propagate.append(recvd)
                 if parsed_msg is not None:
                     break
         return parsed_msg

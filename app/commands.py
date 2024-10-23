@@ -29,7 +29,7 @@ class Command:
         self.encoder = ENCODER
         self.storage = RedisDB() if storage is None else storage
 
-    def handle_cmd(self, *args):
+    def handle_cmd(self, *args, **kwargs):
         if len(args) < 1:
             raise InvalidCommandCall(f'Must pass a command.')
         cmd = args[0]
@@ -38,23 +38,23 @@ class Command:
 
         match cmd:
             case CommandEnum.ECHO:
-                return self.handle_echo_cmd(*args)
+                return False, self.handle_echo_cmd(*args)
             case CommandEnum.PING:
-                return self.handle_ping_cmd()
+                return False, self.handle_ping_cmd()
             case CommandEnum.SET:
-                return self.handle_set_cmd(*args)
+                return True, self.handle_set_cmd(*args)
             case CommandEnum.GET:
-                return self.handle_get_cmd(*args)
+                return False, self.handle_get_cmd(*args)
             case CommandEnum.CONFIG:
-                return self.handle_config_cmd(*args)
+                return False, self.handle_config_cmd(*args)
             case CommandEnum.KEYS:
-                return self.handle_keys(*args)
+                return False, self.handle_keys(*args)
             case CommandEnum.INFO:
-                return self.handle_info_cmd(*args)
+                return False, self.handle_info_cmd(*args)
             case CommandEnum.REPLCONF:
-                return self.handle_replconf(*args)
+                return False, self.handle_replconf(*args, **kwargs)
             case CommandEnum.PSYNC:
-                return self.handle_psync_cmd(*args)
+                return False, self.handle_psync_cmd(*args)
 
             
     def verify_args_len(self, _type, num, args):
@@ -67,8 +67,9 @@ class Command:
         full_db = b'$' + str(len(EMPTY_DB)).encode('utf-8') + BOUNDARY + EMPTY_DB
         return res + full_db
 
-    def handle_replconf(self, *args):
+    def handle_replconf(self, *args, **kwargs):
         self.verify_args_len(CommandEnum.REPLCONF, 2, args)
+        kwargs['replicas'].add(kwargs['sock'])
         return self.encoder.encode('OK', EncodedMessageType.SIMPLE_STRING)
 
     def handle_info_cmd(self, *args):
@@ -122,7 +123,7 @@ class Command:
         self.verify_args_len(CommandEnum.SET, 3, args)
         other_args = self.parse_set_args(args)
         resp = self.storage.set(args[1], args[2], **other_args)
-        return self.encoder.encode(resp, EncodedMessageType.SIMPLE_STRING)
+        return self.encoder.encode(resp, EncodedMessageType.SIMPLE_STRING) if not ConfigNamespace.is_replica() else None
 
 
     def handle_echo_cmd(self, *args):
