@@ -3,7 +3,7 @@ from enum import StrEnum
 
 from app.encoder import RespEncoder, EncodedMessageType, ENCODER
 from app.storage import RedisDB
-from app.constants import SET_ARGS
+from app.constants import SET_ARGS, BOUNDARY
 from app.namespace import ConfigNamespace
 
 class CommandEnum(StrEnum):
@@ -63,7 +63,9 @@ class Command:
 
     def handle_psync_cmd(self, *args):
         self.verify_args_len(CommandEnum.PSYNC, 2, args)
-        return self.encoder.encode('FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0', EncodedMessageType.SIMPLE_STRING)
+        res = self.encoder.encode('FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0', EncodedMessageType.SIMPLE_STRING)
+        full_db = b'$' + str(len(EMPTY_DB)).encode('utf-8') + BOUNDARY + EMPTY_DB
+        return res + full_db
 
     def handle_replconf(self, *args):
         self.verify_args_len(CommandEnum.REPLCONF, 2, args)
@@ -132,3 +134,6 @@ class Command:
 
     def handle_ping_cmd(self):
         return self.encoder.encode('PONG', EncodedMessageType.SIMPLE_STRING)
+
+
+EMPTY_DB = bytes.fromhex("524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2")
