@@ -8,7 +8,8 @@ class HandShakeStates(IntEnum):
     AWAIT_PONG = 1
     SEND_REPLCONF = 2
     SEND_PSYNC = 3
-    END = 4
+    FULLRESYNC = 4
+    END = 5
 
 class Handshake:
     state = HandShakeStates.INIT
@@ -34,5 +35,9 @@ class Handshake:
         if cls.state == HandShakeStates.SEND_PSYNC and data is not None:
             if data != b'OK':
                 return
-            cls.state = HandShakeStates.END
+            cls.state = HandShakeStates.FULLRESYNC
             return ENCODER.encode([CommandEnum.PSYNC, '?', '-1'], EncodedMessageType.ARRAY)
+        if cls.state == HandShakeStates.FULLRESYNC:
+            # consume and do nothing
+            cls.state = HandShakeStates.END
+            return HandShakeStates.END

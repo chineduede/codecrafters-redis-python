@@ -21,8 +21,10 @@ class States(IntEnum):
 
 class RespParser:
     def __init__(self, *, debug=False) -> None:
-        self.init()
         self.debug = debug
+        self.running_idx = 0
+        self.pos = 0
+        self.init()
     
     def incr(self):
         self.pos +=1
@@ -34,6 +36,7 @@ class RespParser:
     def init(self):
         self.buffer = b''
         self.buffer_type: bytes = None
+        self.running_idx += self.pos
         self.pos = 0
         self.current_state = States.READ_TYPE
         self.misc = {}
@@ -57,25 +60,31 @@ class RespParser:
         self.current_state = States.READ_ARR_ELE
 
     def parse_all(self, sock: socket, selector: BaseSelector | None = None, msg_to_propagate: list[bytes] | None = None):
-        recvd = sock.recv(1024)
-        if msg_to_propagate is not None:
-            msg_to_propagate.append(recvd)
-        if not recvd:
-            if selector:
-                selector.unregister(sock)
-            sock.close()
-            return
+        buffer = b''
+        while True:
+            try:
+                chunk = sock.recv(1024)
+                if not chunk:
+                    if selector:
+                        selector.unregister(sock)
+                    sock.close()
+                    return
+                buffer += chunk
+            except BlockingIOError:
+                break
 
-        parsed_msg = self.parse(recvd)
-        self.debug and print('***', recvd)
-        if parsed_msg is None:
-            while recvd := sock.recv(1024):
-                parsed_msg = parser.parse(recvd)
-                if msg_to_propagate is not None:
-                    msg_to_propagate.append(recvd)
-                if parsed_msg is not None:
-                    break
-        return parsed_msg
+        if msg_to_propagate is not None:
+            msg_to_propagate.append(buffer)
+
+        return self.parse_multiple(buffer)
+
+    def parse_multiple(self, data: bytes):
+        all_msg = []
+        while msg := self.parse(data[self.running_idx:]):
+            all_msg.append(msg)
+
+        self.running_idx = 0
+        return all_msg
 
     def parse(self, data: bytes):
         if self.buffer_type is None:

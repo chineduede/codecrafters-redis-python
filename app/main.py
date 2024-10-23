@@ -5,7 +5,7 @@ import argparse
 from app.resp_parser import RespParser
 from app.commands import Command
 from app.namespace import ConfigNamespace
-from app.handshake import Handshake
+from app.handshake import Handshake, HandShakeStates
 from app.util import decode
 
 parser = argparse.ArgumentParser('Redis')
@@ -19,22 +19,29 @@ replicas: set[socket.socket] = set()  # a list of replica sockets that are conne
 
 def propagate(message: bytes):
     for sock in replicas:
-        print(sock.getpeername())
         sock.sendall(b''.join(message))
 
 def read(sock: socket.socket, mask, cmd_parser: Command):
+    def send_(b):
+        propagate_to_replicas, to_send = cmd_parser.handle_cmd(*decode(b), sock=sock, replicas=replicas)
+        if to_send:
+            sock.sendall(to_send)
+
+        if propagate_to_replicas and not ConfigNamespace.is_replica():
+            propagate(msg_to_propagate)
+
     parser = RespParser()
     msg_to_propagate = []
     parsed_msg = parser.parse_all(sock, sel, msg_to_propagate)
+    # print('main read', parsed_msg)
     if parsed_msg is None:
         return
 
-    propagate_to_replicas, to_send = cmd_parser.handle_cmd(*decode(parsed_msg), sock=sock, replicas=replicas)
-    if to_send:
-        sock.sendall(to_send)
-
-    if propagate_to_replicas and not ConfigNamespace.is_replica():
-        propagate(msg_to_propagate)
+    if len(parsed_msg) == 1 and isinstance(parsed_msg[0], bytes):
+        send_(parsed_msg[0])
+    else:
+        for cmd_arr in parsed_msg:
+            send_(cmd_arr)
 
 def accept(sock: socket.socket, mask, cmd_parser):
     conn, _ = sock.accept()
@@ -47,13 +54,23 @@ def handle_replica_to_master():
 
 def handle_master_data(sock: socket.socket, mask, cmd_parser):
     parser = RespParser()
-    # print(parsed_msg)
     parsed_msg = parser.parse_all(sock, sel)
-    if parsed_msg is None:
+    # print('sub read', parsed_msg)
+    if not parsed_msg:
         return
-    res = Handshake.handle_stage(parsed_msg)
-    if res:
+    res = Handshake.handle_stage(parsed_msg[0])
+    if res and res != HandShakeStates.END:
         sock.sendall(res)
+    else:
+        # handshake finished
+        if len(parsed_msg) == 1 and isinstance(parsed_msg[0], bytes):
+            cmd_parser.handle_cmd(*decode(parsed_msg[0]), sock=sock, replicas=replicas)
+        else:
+            for cmd in parsed_msg:
+                cmd_parser.handle_cmd(*decode(cmd), sock=sock, replicas=replicas)
+        # if ConfigNamespace.is_replica():
+        #     return
+
 
 def connect_replica():
     host, port = ConfigNamespace.replicaof.split()
