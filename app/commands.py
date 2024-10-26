@@ -82,7 +82,9 @@ class Command:
 
         no_of_replicas = int(cmd_arr[1])
         wait_ms = int(cmd_arr[2])
-        self.curr_sock.sendall(self.encoder.encode(0, EncodedMessageType.INTEGER))
+
+        cn_reps = str(len(self.replicas))
+        self.curr_sock.sendall(self.encoder.encode(cn_reps.encode('utf-8'), EncodedMessageType.INTEGER))
 
     def handle_psync_cmd(self, cmd_arr):
         self.verify_args_len(CommandEnum.PSYNC, 2, cmd_arr)
