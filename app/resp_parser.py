@@ -2,7 +2,7 @@ from enum import IntEnum
 from socket import socket
 from selectors import BaseSelector
 
-from app.constants import BOUNDARY, STRING, BULK_STRING, ARRAY, MAGIC_STR
+from app.constants import BOUNDARY, STRING, BULK_STRING, ARRAY, MAGIC_STR, INTEGER
 
 class WrongMessage(Exception):
     pass
@@ -18,6 +18,7 @@ class States(IntEnum):
     READ_STR = 3
     READ_SMPL_STR = 4
     READ_ARR_ELE = 5
+    READ_INTEGER = 6
 
 class RespParser:
     def __init__(self, *, debug=False) -> None:
@@ -103,6 +104,8 @@ class RespParser:
                         self.current_state = States.READ_SMPL_STR
                     elif data_type == ARRAY:
                         self.current_state = States.READ_ARR_LEN
+                    elif data_type == INTEGER:
+                        self.current_state = States.READ_INTEGER
                 else:
                     # validate data here
                     break
@@ -139,6 +142,21 @@ class RespParser:
                 elif self.buffer_type == BULK_STRING:
                     self.init()
                     return bulk_str
+            elif self.current_state == States.READ_INTEGER:
+                value = self.consume_until_boundary()
+                if value is None:
+                    break
+                else:
+                    value = int(value)
+                    self.debug and print(f'Simple string {value}')
+                    # self.incr()
+                    self.consume_boundary()
+                    self.current_state = States.READ_TYPE
+                    if self.arr_stack:
+                        self.add_ele_to_arr(value)
+                    elif self.buffer_type == INTEGER:
+                        self.init()
+                        return value
             elif self.current_state == States.READ_SMPL_STR:
                 value = self.consume_until_boundary()
                 if value is None:

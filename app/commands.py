@@ -17,6 +17,7 @@ class CommandEnum(StrEnum):
     INFO = 'info'
     REPLCONF = 'replconf'
     PSYNC = 'psync'
+    WAIT = 'wait'
 
 class InvalidCommandCall(Exception):
     pass
@@ -46,23 +47,25 @@ class Command:
 
         match cmd.decode('utf-8'):
             case CommandEnum.ECHO:
-                return False, self.handle_echo_cmd(command_arr)
+                return self.handle_echo_cmd(command_arr)
             case CommandEnum.PING:
-                return False, self.handle_ping_cmd()
+                return self.handle_ping_cmd()
             case CommandEnum.SET:
                 return True, self.handle_set_cmd(command_arr)
             case CommandEnum.GET:
-                return False, self.handle_get_cmd(command_arr)
+                return self.handle_get_cmd(command_arr)
             case CommandEnum.CONFIG:
-                return False, self.handle_config_cmd(command_arr)
+                return self.handle_config_cmd(command_arr)
             case CommandEnum.KEYS:
-                return False, self.handle_keys(command_arr)
+                return self.handle_keys(command_arr)
             case CommandEnum.INFO:
-                return False, self.handle_info_cmd(command_arr)
+                return self.handle_info_cmd(command_arr)
             case CommandEnum.REPLCONF:
-                return False, self.handle_replconf(command_arr)
+                return self.handle_replconf(command_arr)
             case CommandEnum.PSYNC:
-                return False, self.handle_psync_cmd(command_arr)
+                return self.handle_psync_cmd(command_arr)
+            case CommandEnum.WAIT:
+                return self.handle_wait_cmd(command_arr)
 
         self.curr_sock = None
     
@@ -73,6 +76,13 @@ class Command:
     def verify_args_len(self, _type, num, args):
         if len(args) < num:
             raise InvalidCommandCall(f'{_type.upper()} cmd must be called with enough argument(s). Called with only {num} argument(s).')
+
+    def handle_wait_cmd(self, cmd_arr):
+        self.verify_args_len(CommandEnum.WAIT, 3, cmd_arr)
+
+        no_of_replicas = int(cmd_arr[1])
+        wait_ms = int(cmd_arr[2])
+        self.curr_sock.sendall(self.encoder.encode(0, EncodedMessageType.INTEGER))
 
     def handle_psync_cmd(self, cmd_arr):
         self.verify_args_len(CommandEnum.PSYNC, 2, cmd_arr)

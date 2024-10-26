@@ -1,5 +1,5 @@
 from enum import IntEnum
-from app.constants import BOUNDARY, STRING, ARRAY, BULK_STRING, NULL_BULK_STR
+from app.constants import BOUNDARY, STRING, ARRAY, BULK_STRING, NULL_BULK_STR, INTEGER
 from app.util import encode
 
 class EncodedMessageType(IntEnum):
@@ -7,6 +7,7 @@ class EncodedMessageType(IntEnum):
     BULK_STRING = 1
     NULL_STR = 2
     ARRAY = 3
+    INTEGER = 4
 
 class RespEncoder:
 
@@ -20,9 +21,14 @@ class RespEncoder:
                 return self.null_bulk_str()
             case EncodedMessageType.ARRAY:
                 return self.encode_array(encode(message), **kwargs)
+            case EncodedMessageType.INTEGER:
+                return self.encode_integer(encode(message))
             case _:
                 return None
-            
+
+    def encode_integer(self, msg) -> bytes:
+        return INTEGER + msg + BOUNDARY
+    
     def encode_smpl_str(self, message) -> bytes:
         return STRING + message + BOUNDARY
             
