@@ -31,6 +31,7 @@ class Command:
         self.storage = RedisDB() if storage is None else storage
         self.replicas: list[socket] = []
         self.curr_sock: socket | None = None
+        self.processed_offset = 0
 
     def handle_cmd(self, command_arr: list[bytes] | bytes, socket: socket):
         self.curr_sock = socket
@@ -64,7 +65,11 @@ class Command:
                 return False, self.handle_psync_cmd(command_arr)
 
         self.curr_sock = None
-  
+    
+    def accum_proc(self, cmd_arr):
+        encoded = self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY)
+        self.processed_offset += len(encoded)
+
     def verify_args_len(self, _type, num, args):
         if len(args) < num:
             raise InvalidCommandCall(f'{_type.upper()} cmd must be called with enough argument(s). Called with only {num} argument(s).')
@@ -81,9 +86,10 @@ class Command:
         if cmd_arr[1].lower() == b'listening-port':
             self.replicas.append(self.curr_sock)
         if cmd_arr[1].lower() == b'getack':
-            msg = self.encoder.encode([CommandEnum.REPLCONF, 'ACK', 0], EncodedMessageType.ARRAY)
+            msg = self.encoder.encode([CommandEnum.REPLCONF, 'ACK', self.processed_offset], EncodedMessageType.ARRAY)
         if msg:
             self.curr_sock.sendall(msg)
+        self.accum_proc(cmd_arr)
 
     def handle_info_cmd(self, cmd_arr):
         return_vals = [
@@ -140,6 +146,7 @@ class Command:
         resp = self.storage.set(cmd_arr[1], cmd_arr[2], **other_args)
         msg = self.encoder.encode(resp, EncodedMessageType.SIMPLE_STRING)
         self.curr_sock.sendall(msg)
+        self.accum_proc(cmd_arr)
 
         for replica in self.replicas:
             replica.sendall(self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY))
@@ -154,7 +161,9 @@ class Command:
         return encoded_msg
 
     def handle_ping_cmd(self):
-        self.curr_sock.sendall(self.encoder.encode('PONG', EncodedMessageType.SIMPLE_STRING))
+        if not ConfigNamespace.is_replica():
+            self.curr_sock.sendall(self.encoder.encode('PONG', EncodedMessageType.SIMPLE_STRING))
+        self.accum_proc([b'PING'])
         
 
 
