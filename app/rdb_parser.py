@@ -2,7 +2,7 @@ import os
 import io
 from pathlib import Path
 
-MAGIC_STR = b'\x52\x45\x44\x49\x53'
+from app.constants import MAGIC_STR
 
 class WrongFile(Exception):
     pass

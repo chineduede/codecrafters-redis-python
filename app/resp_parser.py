@@ -2,7 +2,7 @@ from enum import IntEnum
 from socket import socket
 from selectors import BaseSelector
 
-from app.constants import BOUNDARY, STRING, BULK_STRING, ARRAY
+from app.constants import BOUNDARY, STRING, BULK_STRING, ARRAY, MAGIC_STR
 
 class WrongMessage(Exception):
     pass
@@ -114,10 +114,13 @@ class RespParser:
                 self.consume_boundary()
                 # check if bulk_string plus boundary is in buffer
                 if self.buffer[self.pos + length: self.pos + length + 2] == BOUNDARY:
-                    self.misc['bulk_len'] = length
-                    self.current_state = States.READ_STR
+                    self.misc['bulk_consume_boundary'] = True
+                elif self.buffer[self.pos : self.pos + len(MAGIC_STR)] == MAGIC_STR:
+                    self.misc['bulk_consume_boundary'] = False
                 else:
                     break
+                self.misc['bulk_len'] = length
+                self.current_state = States.READ_STR
             elif self.current_state == States.READ_STR:
                 bulk_str_len = self.misc['bulk_len']
                 bulk_str = self.consume_until_boundary(bulk_str_len)
@@ -125,7 +128,9 @@ class RespParser:
                     break
                 del self.misc['bulk_len']
                 self.debug and print(f'Bulk string {bulk_str}')
-                self.consume_boundary()
+                if self.misc['bulk_consume_boundary']:
+                    self.consume_boundary()
+                del self.misc['bulk_consume_boundary']
                 self.current_state = States.READ_TYPE
                 # if in array
                 if self.arr_stack:
@@ -140,7 +145,7 @@ class RespParser:
                     break
                 else:
                     self.debug and print(f'Simple string {value}')
-                    self.incr()
+                    # self.incr()
                     self.consume_boundary()
                     self.current_state = States.READ_TYPE
                     if self.arr_stack:

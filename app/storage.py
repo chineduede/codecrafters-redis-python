@@ -32,6 +32,10 @@ class RedisDB:
             del self.store[key]
     
     def set(self, key, value, **kwargs):
+        if isinstance(key, bytes):
+            key = key.decode('utf-8')
+        if isinstance(value, bytes):
+            value = value.decode('utf-8')
         obj = {
             'value': value
         }

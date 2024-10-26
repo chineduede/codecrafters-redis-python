@@ -1,5 +1,6 @@
 import re
 from enum import StrEnum
+from socket import socket
 
 from app.encoder import RespEncoder, EncodedMessageType, ENCODER
 from app.storage import RedisDB
@@ -28,90 +29,104 @@ class Command:
     def __init__(self, *, encoder: RespEncoder = None, storage: RedisDB = None) -> None:
         self.encoder = ENCODER
         self.storage = RedisDB() if storage is None else storage
+        self.replicas: list[socket] = []
+        self.curr_sock: socket | None = None
 
-    def handle_cmd(self, *args, **kwargs):
-        if len(args) < 1:
+    def handle_cmd(self, command_arr: list[bytes] | bytes, socket: socket):
+        self.curr_sock = socket
+        if not isinstance(command_arr, list):
+            return {}
+
+        if len(command_arr) < 1:
             raise InvalidCommandCall(f'Must pass a command.')
-        cmd = args[0]
-        if isinstance(cmd, str):
-            cmd = cmd.lower()
+        cmd = command_arr[0].strip().lower()
+        # if isinstance(cmd, str):
+        #     cmd = cmd.lower()
 
-        match cmd:
+        match cmd.decode('utf-8'):
             case CommandEnum.ECHO:
-                return False, self.handle_echo_cmd(*args)
+                return False, self.handle_echo_cmd(command_arr)
             case CommandEnum.PING:
                 return False, self.handle_ping_cmd()
             case CommandEnum.SET:
-                return True, self.handle_set_cmd(*args)
+                return True, self.handle_set_cmd(command_arr)
             case CommandEnum.GET:
-                return False, self.handle_get_cmd(*args)
+                return False, self.handle_get_cmd(command_arr)
             case CommandEnum.CONFIG:
-                return False, self.handle_config_cmd(*args)
+                return False, self.handle_config_cmd(command_arr)
             case CommandEnum.KEYS:
-                return False, self.handle_keys(*args)
+                return False, self.handle_keys(command_arr)
             case CommandEnum.INFO:
-                return False, self.handle_info_cmd(*args)
+                return False, self.handle_info_cmd(command_arr)
             case CommandEnum.REPLCONF:
-                return False, self.handle_replconf(*args, **kwargs)
+                return False, self.handle_replconf(command_arr)
             case CommandEnum.PSYNC:
-                return False, self.handle_psync_cmd(*args)
+                return False, self.handle_psync_cmd(command_arr)
 
-            
+        self.curr_sock = None
+  
     def verify_args_len(self, _type, num, args):
         if len(args) < num:
             raise InvalidCommandCall(f'{_type.upper()} cmd must be called with enough argument(s). Called with only {num} argument(s).')
 
-    def handle_psync_cmd(self, *args):
-        self.verify_args_len(CommandEnum.PSYNC, 2, args)
+    def handle_psync_cmd(self, cmd_arr):
+        self.verify_args_len(CommandEnum.PSYNC, 2, cmd_arr)
         res = self.encoder.encode('FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0', EncodedMessageType.SIMPLE_STRING)
         full_db = b'$' + str(len(EMPTY_DB)).encode('utf-8') + BOUNDARY + EMPTY_DB
-        return res + full_db
+        self.curr_sock.sendall(res + full_db)
 
-    def handle_replconf(self, *args, **kwargs):
-        self.verify_args_len(CommandEnum.REPLCONF, 2, args)
-        kwargs['replicas'].add(kwargs['sock'])
-        return self.encoder.encode('OK', EncodedMessageType.SIMPLE_STRING)
+    def handle_replconf(self, cmd_arr):
+        self.verify_args_len(CommandEnum.REPLCONF, 2, cmd_arr)
+        msg = self.encoder.encode('OK', EncodedMessageType.SIMPLE_STRING)
+        if cmd_arr[1].lower() == b'listening-port':
+            self.replicas.append(self.curr_sock)
+        if cmd_arr[1].lower() == b'getack':
+            msg = self.encoder.encode([CommandEnum.REPLCONF, 'ACK', 0], EncodedMessageType.ARRAY)
+        if msg:
+            self.curr_sock.sendall(msg)
 
-    def handle_info_cmd(self, *args):
+    def handle_info_cmd(self, cmd_arr):
         return_vals = [
             f'role:{ConfigNamespace.server_type}',
             'master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb',
             'master_repl_offset:0',
         ]
-        return self.encoder.encode('\n'.join(return_vals), EncodedMessageType.BULK_STRING)
+        self.curr_sock.sendall(self.encoder.encode('\n'.join(return_vals), EncodedMessageType.BULK_STRING))
 
-    def handle_keys(self, *args):
-        self.verify_args_len(CommandEnum.KEYS, 2, args)
-        regex = re.compile(re.escape(args[1]).replace(r'\*', '.*').replace(r'\?', '.'))
+    def handle_keys(self, cmd_arr):
+        self.verify_args_len(CommandEnum.KEYS, 2, cmd_arr)
+        key_arg = cmd_arr[1]
+        if isinstance(key_arg, bytes):
+            key_arg = key_arg.decode('utf-8')
+        regex = re.compile(re.escape(key_arg).replace(r'\*', '.*').replace(r'\?', '.'))
         matches = [s for s in self.storage.get_all_keys() if regex.match(s)]
-        return self.encoder.encode(matches, EncodedMessageType.ARRAY)
+        self.curr_sock.sendall(self.encoder.encode(matches, EncodedMessageType.ARRAY))
 
-    def handle_config_cmd(self, *args):
-        self.verify_args_len(CommandEnum.CONFIG, 3, args)
-        config_type = args[1]
-        if not isinstance(config_type, str):
-            raise InvalidCommandCall(f'Wrong type of Config, {type(config_type)}')
-        else:
-            config_type = config_type.lower()
+    def handle_config_cmd(self, cmd_arr):
+        self.verify_args_len(CommandEnum.CONFIG, 3, cmd_arr)
+        config_type = cmd_arr[1].lower()
 
-        if config_type == 'get':
-            return self.handle_config_get(args[2])
+        if config_type == b'get':
+            return self.handle_config_get(cmd_arr[2].decode('utf-8'))
 
     def handle_config_get(self, key):
         value = getattr(ConfigNamespace, key, None)
-        return self.encoder.encode([key, value], EncodedMessageType.ARRAY)
+        self.curr_sock.sendall(self.encoder.encode([key, value], EncodedMessageType.ARRAY))
 
-    def handle_get_cmd(self, *args):
-        self.verify_args_len(CommandEnum.GET, 2, args)
-        msg = self.storage.get(args[1])
+    def handle_get_cmd(self, cmd_arr):
+        self.verify_args_len(CommandEnum.GET, 2, cmd_arr)
+        msg = self.storage.get(cmd_arr[1].decode('utf-8'))
         if msg is None:
-            return self.encoder.encode('', EncodedMessageType.NULL_STR)
-        return self.encoder.encode(msg, EncodedMessageType.BULK_STRING)
+            msg = self.encoder.encode('', EncodedMessageType.NULL_STR)
+        else:
+            msg = self.encoder.encode(msg, EncodedMessageType.BULK_STRING)
+        self.curr_sock.sendall(msg)
     
-    def parse_set_args(self, args):
+    def parse_set_args(self, cmd_arr):
         # list of args for SET cmd, we return a dict
         args_dict = {}
-        other_args: list = [x.lower() if isinstance(x, str) else x for x in args[3:]]
+        cmd_arr = [b.decode('utf-8') for b in cmd_arr]
+        other_args: list = [x.lower() if isinstance(x, str) else x for x in cmd_arr[3:]]
         for cmd in SET_ARGS:
             if cmd in other_args:
                 idx = other_args.index(cmd)
@@ -119,22 +134,28 @@ class Command:
         return args_dict
 
     
-    def handle_set_cmd(self, *args):
-        self.verify_args_len(CommandEnum.SET, 3, args)
-        other_args = self.parse_set_args(args)
-        resp = self.storage.set(args[1], args[2], **other_args)
-        return self.encoder.encode(resp, EncodedMessageType.SIMPLE_STRING) if not ConfigNamespace.is_replica() else None
+    def handle_set_cmd(self, cmd_arr):
+        self.verify_args_len(CommandEnum.SET, 3, cmd_arr)
+        other_args = self.parse_set_args(cmd_arr)
+        resp = self.storage.set(cmd_arr[1], cmd_arr[2], **other_args)
+        msg = self.encoder.encode(resp, EncodedMessageType.SIMPLE_STRING)
+        self.curr_sock.sendall(msg)
+
+        for replica in self.replicas:
+            replica.sendall(self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY))
 
 
-    def handle_echo_cmd(self, *args):
-        self.verify_args_len(CommandEnum.ECHO, 2, args)
-        encoded_msg = self.encoder.encode(args[1], EncodedMessageType.BULK_STRING)
+    def handle_echo_cmd(self, cmd_arr):
+        self.verify_args_len(CommandEnum.ECHO, 2, cmd_arr)
+        encoded_msg = self.encoder.encode(cmd_arr[1], EncodedMessageType.BULK_STRING)
         if encoded_msg is None:
             raise CantEncodeMessage(f'Cant encode message.')
+        self.curr_sock.sendall(encoded_msg)
         return encoded_msg
 
     def handle_ping_cmd(self):
-        return self.encoder.encode('PONG', EncodedMessageType.SIMPLE_STRING)
+        self.curr_sock.sendall(self.encoder.encode('PONG', EncodedMessageType.SIMPLE_STRING))
+        
 
 
 EMPTY_DB = bytes.fromhex("524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2")
