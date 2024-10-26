@@ -60,7 +60,7 @@ def connect_replica():
     host, port = ConfigNamespace.replicaof.split()
     
     conn = socket.create_connection((host, int(port)))
-    print(conn)
+    ConfigNamespace.master_conn = conn
     # send PING cmd
     conn.setblocking(False)
     ping_encoded = Handshake.handle_stage()

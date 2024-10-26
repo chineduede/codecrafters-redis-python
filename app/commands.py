@@ -145,12 +145,15 @@ class Command:
         other_args = self.parse_set_args(cmd_arr)
         resp = self.storage.set(cmd_arr[1], cmd_arr[2], **other_args)
         msg = self.encoder.encode(resp, EncodedMessageType.SIMPLE_STRING)
-        if not ConfigNamespace.is_replica():
-            self.curr_sock.sendall(msg)
-        else:
+
+        if hasattr(ConfigNamespace, 'master_conn') and ConfigNamespace.master_conn is self.curr_sock:
             self.accum_proc(cmd_arr)
-            for replica in self.replicas:
-                replica.sendall(self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY))
+        else:
+            self.curr_sock.sendall(msg)
+
+            if not ConfigNamespace.is_replica():
+                for replica in self.replicas:
+                    replica.sendall(self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY))
 
 
     def handle_echo_cmd(self, cmd_arr):
