@@ -4,6 +4,19 @@ from datetime import datetime, timedelta
 from app.namespace import ConfigNamespace
 from app.rdb_parser import RDBParser
 
+class RedisStream:
+    
+    def __init__(self, name: str) -> None:
+        self.id = name
+        self.items = []
+        
+    def append(self, **kwargs):
+        obj = {
+            'key': kwargs['key'],
+            'value': kwargs['value']
+        }
+        self.items.append({'id': kwargs['id'], 'item': obj})
+
 class RedisDB:
 
     def __init__(self) -> None:
@@ -53,7 +66,17 @@ class RedisDB:
             return 'none'
         if isinstance(val, str):
             return 'string'
+        if isinstance(val, RedisStream):
+            return 'stream'
         return'none'
 
     def get_all_keys(self):
         return list(self.store.keys())
+    
+    def xadd(self, stream_name, id, key, value):
+        item_id = id
+        stream = self.store.get(stream_name, None)
+        if not stream or not isinstance(stream, RedisStream):
+            stream = RedisStream(stream_name)
+        stream.append(key=key, value=value, id=item_id)
+        return item_id

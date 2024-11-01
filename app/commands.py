@@ -6,6 +6,7 @@ from app.encoder import RespEncoder, EncodedMessageType, ENCODER
 from app.storage import RedisDB
 from app.constants import SET_ARGS, BOUNDARY
 from app.namespace import ConfigNamespace
+from app.util import decode
 
 class CommandEnum(StrEnum):
     ECHO = 'echo'
@@ -19,6 +20,7 @@ class CommandEnum(StrEnum):
     PSYNC = 'psync'
     WAIT = 'wait'
     TYPE = 'type'
+    XADD = 'xadd'
 
 class InvalidCommandCall(Exception):
     pass
@@ -69,6 +71,8 @@ class Command:
                 return self.handle_wait_cmd(command_arr)
             case CommandEnum.TYPE:
                 return self.handle_get_type_cmd(command_arr)
+            case CommandEnum.XADD:
+                return self.handle_xadd_cmd(command_arr)
 
         self.curr_sock = None
     
@@ -89,6 +93,14 @@ class Command:
         cn_reps = str(len(self.replicas))
         self.curr_sock.sendall(self.encoder.encode(cn_reps.encode('utf-8'), EncodedMessageType.INTEGER))
 
+    def handle_xadd_cmd(self, cmd_arr):
+        self.verify_args_len(CommandEnum.WAIT, 5, cmd_arr)
+        
+        cmd_arr = [decode(x) for x in cmd_arr]
+        response = self.storage.xadd(cmd_arr[1], cmd_arr[2], cmd_arr[3], cmd_arr[4])
+        msg = self.encoder.encode(response, EncodedMessageType.BULK_STRING)
+        self.curr_sock.sendall(msg)
+        
     def handle_psync_cmd(self, cmd_arr):
         self.verify_args_len(CommandEnum.PSYNC, 2, cmd_arr)
         res = self.encoder.encode('FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0', EncodedMessageType.SIMPLE_STRING)
