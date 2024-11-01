@@ -18,6 +18,7 @@ class CommandEnum(StrEnum):
     REPLCONF = 'replconf'
     PSYNC = 'psync'
     WAIT = 'wait'
+    TYPE = 'type'
 
 class InvalidCommandCall(Exception):
     pass
@@ -66,6 +67,8 @@ class Command:
                 return self.handle_psync_cmd(command_arr)
             case CommandEnum.WAIT:
                 return self.handle_wait_cmd(command_arr)
+            case CommandEnum.TYPE:
+                return self.handle_get_type_cmd(command_arr)
 
         self.curr_sock = None
     
@@ -138,6 +141,15 @@ class Command:
             msg = self.encoder.encode('', EncodedMessageType.NULL_STR)
         else:
             msg = self.encoder.encode(msg, EncodedMessageType.BULK_STRING)
+        self.curr_sock.sendall(msg)
+        
+    def handle_get_type_cmd(self, cmd_arr):
+        self.verify_args_len(CommandEnum.GET, 2, cmd_arr)
+        msg = self.storage.get_type(cmd_arr[1].decode('utf-8'))
+        if msg is None:
+            msg = self.encoder.encode('', EncodedMessageType.NULL_STR)
+        else:
+            msg = self.encoder.encode(msg, EncodedMessageType.SIMPLE_STRING)
         self.curr_sock.sendall(msg)
     
     def parse_set_args(self, cmd_arr):

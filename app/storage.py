@@ -47,5 +47,13 @@ class RedisDB:
         self.store[key] = obj
         return 'OK'
     
+    def get_type(self, key):
+        val = self.get(key)
+        if val is None:
+            return 'none'
+        if isinstance(val, str):
+            return 'string'
+        return'none'
+
     def get_all_keys(self):
         return list(self.store.keys())
