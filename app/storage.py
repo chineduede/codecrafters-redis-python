@@ -77,21 +77,19 @@ class RedisDB:
     def xadd(self, stream_name, id, key, value):
         item_id = id
         stream = self.store.get(stream_name, None)
-        if stream and hasattr(stream, 'value'):
-            stream = stream['value']
         if not stream or not isinstance(stream, RedisStream):
             stream = RedisStream(stream_name)
+        print(stream.items)
         print(item_id, self.validate_stream_id(item_id, stream))
         if not self.validate_stream_id(item_id, stream):
             return None
         stream.append(key=key, value=value, id=item_id)
-        self.store[stream_name] = {'value': stream}
+        self.store[stream_name] = {'value': stream }
         return item_id
     
     def validate_stream_id(self, id: str, stream: RedisStream):
         ms_latest, seq_latest = id.split(RedisStream.SEP)
         ms_latest, seq_latest = int(ms_latest), int(seq_latest)
-        print(stream.items)
         if len(stream.items) > 0:
             last_entry = stream.items[-1]
             ms_earlier, seq_earlier = last_entry['id'].split(RedisStream.SEP)
