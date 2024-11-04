@@ -77,6 +77,7 @@ class RedisDB:
     def xadd(self, stream_name, id, key, value):
         item_id = id
         stream = self.store.get(stream_name, None)
+        print(stream)
         if not stream or not isinstance(stream, RedisStream):
             stream = RedisStream(stream_name)
         print(stream.items)
