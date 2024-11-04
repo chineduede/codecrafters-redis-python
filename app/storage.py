@@ -79,5 +79,5 @@ class RedisDB:
         if not stream or not isinstance(stream, RedisStream):
             stream = RedisStream(stream_name)
         stream.append(key=key, value=value, id=item_id)
-        self.store[stream_name] = stream
+        self.store[stream_name] = {'value': stream}
         return item_id
