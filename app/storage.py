@@ -86,13 +86,17 @@ class RedisDB:
         return item_id
     
     def validate_stream_id(self, id: str, stream: RedisStream):
-        latest_part_1, _ = id.split(RedisStream.SEP)
-        latest_part_1 = int(latest_part_1)
+        ms_latest, seq_latest = id.split(RedisStream.SEP)
+        ms_latest, seq_latest = int(ms_latest), int(seq_latest)
         if len(stream.items) > 0:
             last_entry = stream.items[-1]
-            last_entry_part_1, _ = last_entry['id'].split(RedisStream.SEP)
-            if latest_part_1 < int(last_entry_part_1):
+            ms_earlier, seq_earlier = last_entry['id'].split(RedisStream.SEP)
+            ms_earlier, seq_earlier = int(ms_earlier), int(seq_earlier)
+            if ms_latest < ms_earlier:
                 return False
+            if ms_latest == ms_earlier:
+                return seq_latest > seq_earlier
         elif len(stream.items) == 0:
-            return latest_part_1 > 0
-        return False
+            if ms_latest == 0:
+                return seq_latest > 0
+        return True
