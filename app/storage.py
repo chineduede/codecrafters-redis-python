@@ -5,7 +5,8 @@ from app.namespace import ConfigNamespace
 from app.rdb_parser import RDBParser
 
 class RedisStream:
-    
+    SEP = '-'
+
     def __init__(self, name: str) -> None:
         self.id = name
         self.items = []
@@ -78,6 +79,20 @@ class RedisDB:
         stream = self.store.get(stream_name, None)
         if not stream or not isinstance(stream, RedisStream):
             stream = RedisStream(stream_name)
+        if not self.validate_stream_id(item_id, stream):
+            return None
         stream.append(key=key, value=value, id=item_id)
         self.store[stream_name] = {'value': stream}
         return item_id
+    
+    def validate_stream_id(self, id: str, stream: RedisStream):
+        latest_part_1, _ = id.split(RedisStream.SEP)
+        latest_part_1 = int(latest_part_1)
+        if len(stream.items) > 0:
+            last_entry = stream.items[-1]
+            last_entry_part_1, _ = last_entry['id'].split(RedisStream.SEP)
+            if latest_part_1 < int(last_entry_part_1):
+                return False
+        elif len(stream.items) == 0:
+            return latest_part_1 > 0
+        return False

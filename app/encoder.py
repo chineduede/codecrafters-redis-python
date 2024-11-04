@@ -1,5 +1,5 @@
 from enum import IntEnum
-from app.constants import BOUNDARY, STRING, ARRAY, BULK_STRING, NULL_BULK_STR, INTEGER
+from app.constants import BOUNDARY, STRING, ARRAY, BULK_STRING, NULL_BULK_STR, INTEGER, ERR
 from app.util import encode
 
 class EncodedMessageType(IntEnum):
@@ -8,6 +8,7 @@ class EncodedMessageType(IntEnum):
     NULL_STR = 2
     ARRAY = 3
     INTEGER = 4
+    ERROR = 5
 
 class RespEncoder:
 
@@ -16,13 +17,15 @@ class RespEncoder:
             case EncodedMessageType.SIMPLE_STRING:
                 return self.encode_smpl_str(encode(message))
             case EncodedMessageType.BULK_STRING:
-                return self.encode_bulk_str(encode(message))
+                return self.encode_bulk_msg(encode(message))
             case EncodedMessageType.NULL_STR:
                 return self.null_bulk_str()
             case EncodedMessageType.ARRAY:
                 return self.encode_array(encode(message), **kwargs)
             case EncodedMessageType.INTEGER:
                 return self.encode_integer(encode(message))
+            case EncodedMessageType.ERROR:
+                return self.encode_bulk_msg(encode(message), ERR)
             case _:
                 return None
 
@@ -32,8 +35,8 @@ class RespEncoder:
     def encode_smpl_str(self, message) -> bytes:
         return STRING + message + BOUNDARY
             
-    def encode_bulk_str(self, message) -> bytes:
-        return BULK_STRING + str(len(message)).encode() + BOUNDARY + message + BOUNDARY
+    def encode_bulk_msg(self, message, starter=BULK_STRING) -> bytes:
+        return starter + str(len(message)).encode() + BOUNDARY + message + BOUNDARY
     
     def encode_array(self, array, *, encode_type = EncodedMessageType.BULK_STRING):
         to_ret = [ARRAY, str(len(array)).encode(), BOUNDARY]

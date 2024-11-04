@@ -98,7 +98,12 @@ class Command:
         
         cmd_arr = [decode(x) for x in cmd_arr]
         response = self.storage.xadd(cmd_arr[1], cmd_arr[2], cmd_arr[3], cmd_arr[4])
-        msg = self.encoder.encode(response, EncodedMessageType.BULK_STRING)
+        
+        if response is None:
+            msg = 'ERR The ID specified in XADD is equal or smaller than the target stream top item'
+            msg = self.encoder.encode(msg, EncodedMessageType.ERROR)
+        else:
+            msg = self.encoder.encode(response, EncodedMessageType.BULK_STRING)
         self.curr_sock.sendall(msg)
         
     def handle_psync_cmd(self, cmd_arr):
