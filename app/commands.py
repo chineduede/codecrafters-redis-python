@@ -104,7 +104,6 @@ class Command:
             msg = self.encoder.encode(msg, EncodedMessageType.ERROR)
         else:
             msg = self.encoder.encode(response, EncodedMessageType.BULK_STRING)
-        print(msg)
         self.curr_sock.sendall(msg)
         
     def handle_psync_cmd(self, cmd_arr):
