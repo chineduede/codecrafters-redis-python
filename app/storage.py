@@ -91,7 +91,7 @@ class RedisDB:
     def validate_stream_id(self, id: str, stream: RedisStream):
         ms_latest, seq_latest = id.split(RedisStream.SEP)
         ms_latest, seq_latest = int(ms_latest), int(seq_latest)
-        # print(stream.items)
+        print(stream.items)
         if len(stream.items) > 0:
             last_entry = stream.items[-1]
             ms_earlier, seq_earlier = last_entry['id'].split(RedisStream.SEP)
