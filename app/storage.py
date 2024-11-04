@@ -79,6 +79,7 @@ class RedisDB:
         stream = self.store.get(stream_name, None)
         if not stream or not isinstance(stream, RedisStream):
             stream = RedisStream(stream_name)
+        print(item_id, self.validate_stream_id(item_id, stream))
         if not self.validate_stream_id(item_id, stream):
             return None
         stream.append(key=key, value=value, id=item_id)
