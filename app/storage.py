@@ -91,7 +91,7 @@ class RedisDB:
         err_msg = f'ERR The ID specified in XADD is equal or smaller than the target stream top item'
         err_msg_2 = 'ERR The ID specified in XADD must be greater than 0-0'
         if id == '0-0':
-            return err_msg_2
+            return False, err_msg_2
         ms_latest, seq_latest = id.split(RedisStream.SEP)
         ms_latest, seq_latest = int(ms_latest), int(seq_latest)
         if len(stream.items) > 0:
