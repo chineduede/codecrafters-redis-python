@@ -97,11 +97,10 @@ class Command:
         self.verify_args_len(CommandEnum.WAIT, 5, cmd_arr)
         
         cmd_arr = [decode(x) for x in cmd_arr]
-        response = self.storage.xadd(cmd_arr[1], cmd_arr[2], cmd_arr[3], cmd_arr[4])
+        success, response = self.storage.xadd(cmd_arr[1], cmd_arr[2], cmd_arr[3], cmd_arr[4])
         
-        if response is None:
-            msg = 'ERR The ID specified in XADD is equal or smaller than the target stream top item'
-            msg = self.encoder.encode(msg, EncodedMessageType.ERROR)
+        if not success:
+            msg = self.encoder.encode(response, EncodedMessageType.ERROR)
         else:
             msg = self.encoder.encode(response, EncodedMessageType.BULK_STRING)
         self.curr_sock.sendall(msg)

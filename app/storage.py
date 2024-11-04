@@ -80,26 +80,29 @@ class RedisDB:
 
         if not stream or not isinstance(stream, RedisStream):
             stream = RedisStream(stream_name)
-        # print(stream.items)
-        # print(item_id, self.validate_stream_id(item_id, stream))
-        if not self.validate_stream_id(item_id, stream):
-            return None
+        success, err_msg = self.validate_stream_id(item_id, stream)
+        if not success:
+            return False, err_msg
         stream.append(key=key, value=value, id=item_id)
         self.store[stream_name] = {'value': stream }
-        return item_id
+        return True, item_id
     
     def validate_stream_id(self, id: str, stream: RedisStream):
+        err_msg = f'ERR The ID specified in XADD is equal or smaller than the target stream top item'
+        err_msg_2 = 'ERR The ID specified in XADD must be greater than 0-0'
+        if id == '0-0':
+            return err_msg_2
         ms_latest, seq_latest = id.split(RedisStream.SEP)
         ms_latest, seq_latest = int(ms_latest), int(seq_latest)
         if len(stream.items) > 0:
-            last_entry = stream.items[-1]
-            ms_earlier, seq_earlier = last_entry['id'].split(RedisStream.SEP)
+            last_entry = stream.items[-1]['id']
+            ms_earlier, seq_earlier = last_entry.split(RedisStream.SEP)
             ms_earlier, seq_earlier = int(ms_earlier), int(seq_earlier)
             if ms_latest < ms_earlier:
-                return False
+                return False, err_msg
             if ms_latest == ms_earlier:
-                return seq_latest > seq_earlier
+                return seq_latest > seq_earlier, err_msg
         elif len(stream.items) == 0:
             if ms_latest == 0:
-                return seq_latest > 0
-        return True
+                return seq_latest > 0, err_msg
+        return True, err_msg
