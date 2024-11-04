@@ -91,6 +91,7 @@ class RedisDB:
         ms_latest, seq_latest = int(ms_latest), int(seq_latest)
         if len(stream.items) > 0:
             last_entry = stream.items[-1]
+            print(last_entry)
             ms_earlier, seq_earlier = last_entry['id'].split(RedisStream.SEP)
             ms_earlier, seq_earlier = int(ms_earlier), int(seq_earlier)
             if ms_latest < ms_earlier:
