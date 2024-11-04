@@ -77,11 +77,11 @@ class RedisDB:
     def xadd(self, stream_name, id, key, value):
         item_id = id
         stream = self.get(stream_name)
-        print(stream)
+
         if not stream or not isinstance(stream, RedisStream):
             stream = RedisStream(stream_name)
-        print(stream.items)
-        print(item_id, self.validate_stream_id(item_id, stream))
+        # print(stream.items)
+        # print(item_id, self.validate_stream_id(item_id, stream))
         if not self.validate_stream_id(item_id, stream):
             return None
         stream.append(key=key, value=value, id=item_id)

@@ -25,18 +25,18 @@ class RespEncoder:
             case EncodedMessageType.INTEGER:
                 return self.encode_integer(encode(message))
             case EncodedMessageType.ERROR:
-                return self.encode_bulk_msg(encode(message), ERR)
+                return self.encode_smpl_str(encode(message), ERR)
             case _:
                 return None
 
     def encode_integer(self, msg) -> bytes:
         return INTEGER + msg + BOUNDARY
     
-    def encode_smpl_str(self, message) -> bytes:
-        return STRING + message + BOUNDARY
+    def encode_smpl_str(self, message, starter=STRING) -> bytes:
+        return starter + message + BOUNDARY
             
-    def encode_bulk_msg(self, message, starter=BULK_STRING) -> bytes:
-        return starter + str(len(message)).encode() + BOUNDARY + message + BOUNDARY
+    def encode_bulk_msg(self, message) -> bytes:
+        return BULK_STRING + str(len(message)).encode() + BOUNDARY + message + BOUNDARY
     
     def encode_array(self, array, *, encode_type = EncodedMessageType.BULK_STRING):
         to_ret = [ARRAY, str(len(array)).encode(), BOUNDARY]
