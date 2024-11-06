@@ -147,7 +147,7 @@ class RedisDB:
         last_id = RedisStream.get_last_id(stream)
 
         if id == RedisStream.ANY:
-            return join_parts(self.generate_fresh_id(last_id))
+            return join_parts(*self.generate_fresh_id(last_id))
 
         ms_curr, _ = id.split(RedisStream.SEP)
         ms_curr = int(ms_curr)
