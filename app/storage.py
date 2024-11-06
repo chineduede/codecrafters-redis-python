@@ -24,11 +24,11 @@ class RedisStream:
         self.items.append({'id': kwargs['id'], 'item': obj})
         
     @staticmethod
-    def stream_is_empty(stream: RedisStream):
+    def stream_is_empty(stream: 'RedisStream'):
         return bool(len(stream.items))
     
     @staticmethod
-    def get_last_id(stream: RedisStream):
+    def get_last_id(stream: 'RedisStream'):
         if not RedisStream.stream_is_empty(stream):
             return stream.items[-1]['id']
             
