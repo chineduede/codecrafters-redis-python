@@ -25,7 +25,7 @@ class RedisStream:
         
     @staticmethod
     def stream_is_empty(stream: 'RedisStream'):
-        return bool(len(stream.items))
+        return not bool(len(stream.items))
     
     @staticmethod
     def get_last_id(stream: 'RedisStream'):
