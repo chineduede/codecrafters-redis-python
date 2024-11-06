@@ -88,27 +88,7 @@ class RedisDB:
 
     def get_all_keys(self):
         return list(self.store.keys())
-    
-    # def validate_stream_id(self, id: str, stream: RedisStream):
-    #     err_msg = f'ERR The ID specified in XADD is equal or smaller than the target stream top item'
-    #     err_msg_2 = 'ERR The ID specified in XADD must be greater than 0-0'
-    #     if id == RedisStream.FORBIDDEN:
-    #         return False, err_msg_2
-    #     ms_latest, seq_latest = id.split(RedisStream.SEP)
-    #     ms_latest, seq_latest = int(ms_latest), int(seq_latest)
-    #     if len(stream.items) > 0:
-    #         last_entry = stream.items[-1]['id']
-    #         ms_earlier, seq_earlier = last_entry.split(RedisStream.SEP)
-    #         ms_earlier, seq_earlier = int(ms_earlier), int(seq_earlier)
-    #         if ms_latest < ms_earlier:
-    #             return False, err_msg
-    #         if ms_latest == ms_earlier:
-    #             return seq_latest > seq_earlier, err_msg
-    #     elif len(stream.items) == 0:
-    #         if ms_latest == 0:
-    #             return seq_latest > 0, err_msg
-    #     return True, err_msg
-    
+
     def xadd(self, stream_name, id, key, value):
         item_id = id
         stream = self.get(stream_name)
@@ -149,13 +129,29 @@ class RedisDB:
                 return seq_latest > seq_earlier
         return True
 
+    def generate_fresh_id(self, last_id: None | str):
+        auto_gen_id = [int(time() * 1000), 0]
+        if last_id is None:
+            return auto_gen_id
+        ms_no, _ = last_id.split(RedisStream.SEP)
+        ms_no = int(ms_no)
+        if ms_no == auto_gen_id[0]:
+            auto_gen_id[-1] += 1
+            return auto_gen_id
+        return auto_gen_id 
+
     def generate_id(self, id: str, stream: RedisStream):
-        ms_curr, _ = id.split(RedisStream.SEP)
-        ms_curr = int(ms_curr)
-        last_id = RedisStream.get_last_id(stream)
-        
         def join_parts(*args):
             return f'{RedisStream.SEP}'.join([str(x) for x in args])
+        
+        last_id = RedisStream.get_last_id(stream)
+
+        if id == RedisStream.ANY:
+            return join_parts(self.generate_fresh_id(last_id))
+
+        ms_curr, _ = id.split(RedisStream.SEP)
+        ms_curr = int(ms_curr)
+        
 
         # No elements in stream
         if last_id is None:
