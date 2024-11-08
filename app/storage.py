@@ -52,7 +52,7 @@ class RedisStream:
     @staticmethod
     def build_obj(obj):
         
-        cc =    obj['id'], [*chain.from_iterable([(k, v) for k, v in obj['item'].items()])]
+        cc =    obj['id'], [*chain.from_iterable([(v) for k, v in obj['item'].items()])]
         print(cc)
         return cc
 
