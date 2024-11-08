@@ -38,13 +38,18 @@ class RedisStream:
         id_ = str(id_)
         high = str(high)
         low = str(low)
-
-        low = low + '-0' if low.find(RedisStream.SEP) == -1 else low
+        
+        if low == '-':
+            low = '0-0'
+        else:
+            low = low + '-0' if low.find(RedisStream.SEP) == -1 else low
 
         higher_than_low = id_ >= low
         lower_than_high = id_ <= high
         
-        if high.find(RedisStream.SEP) == -1:
+        if high == '+':
+            lower_than_high = True
+        elif high.find(RedisStream.SEP) == -1:
             lower_than_high = id_.split(RedisStream.SEP)[0] <= high
         
         return lower_than_high and higher_than_low
