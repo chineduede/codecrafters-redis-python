@@ -98,7 +98,7 @@ class Command:
         
     def handle_cmd_xrange(self, cmd_arr):
         print(cmd_arr)
-        self.verify_args_len(CommandEnum.WAIT, 5, cmd_arr)
+        self.verify_args_len(CommandEnum.WAIT, 4, cmd_arr)
         
         cmd_arr = [decode(x) for x in cmd_arr]
         response = self.storage.xrange(cmd_arr[1], cmd_arr[2], cmd_arr[3], cmd_arr[4])
