@@ -175,11 +175,15 @@ class RedisDB:
         stream = self.get(stream_name)
         return stream.get_items_in_range(start_id, end_id)
     
-    def xread(self, stream_name, start_id):
-        stream = self.get(stream_name)
+    def xread(self, **kwargs):
+        streams, keys = kwargs['streams'], kwargs['keys']
+        response = []
+        for i, name in enumerate(streams): 
+            stream = self.get(name)
         # print(self.store)
-        result = stream.get_items_in_range(start_id, '+', True)
-        return [[stream_name, result]]
+            result = stream.get_items_in_range(keys[i], '+', True)
+            response.append([name, result])
+        return response
         
     def generate_fresh_id(self, last_id: None | str):
         auto_gen_id = [int(time() * 1000), 0]

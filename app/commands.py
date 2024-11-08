@@ -103,7 +103,15 @@ class Command:
         self.verify_args_len(CommandEnum.XREAD, 4, cmd_arr)
         
         cmd_arr = [decode(x) for x in cmd_arr]
-        response = self.storage.xread(cmd_arr[2], cmd_arr[3])
+        streams, keys = [], []
+        
+        str_keys = cmd_arr[2:]
+        s_k_len = len(str_keys)
+        mid = s_k_len // 2
+        streams = str_keys[:mid]
+        keys = str_keys[mid:]
+
+        response = self.storage.xread(streams=streams, keys=keys)
         msg = self.encoder.encode(response, EncodedMessageType.ARRAY)
         self.curr_sock.sendall(msg)
 
