@@ -53,7 +53,7 @@ class RedisStream:
     def build_obj(obj):
         response = [obj['id']]
         kv_pairs = []
-        for k, v in obj['items'].items():
+        for _, v in obj['item'].items():
             kv_pairs.append(v)
         response.append(kv_pairs)
         return response
