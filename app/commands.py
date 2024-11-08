@@ -97,7 +97,6 @@ class Command:
         self.curr_sock.sendall(self.encoder.encode(cn_reps.encode('utf-8'), EncodedMessageType.INTEGER))
         
     def handle_cmd_xrange(self, cmd_arr):
-        print(cmd_arr)
         self.verify_args_len(CommandEnum.XRANGE, 4, cmd_arr)
         
         cmd_arr = [decode(x) for x in cmd_arr]
