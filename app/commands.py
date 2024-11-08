@@ -98,15 +98,15 @@ class Command:
         
     def handle_cmd_xrange(self, cmd_arr):
         print(cmd_arr)
-        self.verify_args_len(CommandEnum.WAIT, 4, cmd_arr)
+        self.verify_args_len(CommandEnum.XRANGE, 4, cmd_arr)
         
         cmd_arr = [decode(x) for x in cmd_arr]
-        response = self.storage.xrange(cmd_arr[1], cmd_arr[2], cmd_arr[3], cmd_arr[4])
+        response = self.storage.xrange(cmd_arr[1], cmd_arr[2], cmd_arr[3])
         msg = self.encoder.encode(response, EncodedMessageType.ARRAY)
         self.curr_sock.sendall(msg)
 
     def handle_xadd_cmd(self, cmd_arr):
-        self.verify_args_len(CommandEnum.WAIT, 5, cmd_arr)
+        self.verify_args_len(CommandEnum.XADD, 5, cmd_arr)
         
         cmd_arr = [decode(x) for x in cmd_arr]
         success, response = self.storage.xadd(cmd_arr[1], cmd_arr[2], cmd_arr[3], cmd_arr[4])
