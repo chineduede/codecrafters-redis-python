@@ -1,5 +1,6 @@
 import pathlib
 from time import time
+from itertools import chain
 
 from datetime import datetime, timedelta
 from app.namespace import ConfigNamespace
@@ -31,7 +32,40 @@ class RedisStream:
     def get_last_id(stream: 'RedisStream'):
         if not RedisStream.stream_is_empty(stream):
             return stream.items[-1]['id']
-            
+                
+    @staticmethod
+    def is_between_range(low, high, id_):
+        id_ = str(id_)
+        high = str(high)
+        low = str(low)
+
+        low = low + '-0' if low.find(RedisStream.SEP) == -1 else low
+
+        higher_than_low = id_ >= low
+        lower_than_high = id_ <= high
+        
+        if high.find(RedisStream.SEP) == -1:
+            lower_than_high = id_.split(RedisStream.SEP)[0] <= high
+        
+        return lower_than_high and higher_than_low
+    
+    @staticmethod
+    def build_obj(obj):
+        return [
+            obj['id'], [*chain.from_iterable([(k, v) for k, v in obj['item'].items()])]
+        ]
+
+    def get_items_in_range(self, low, high):
+        response = []
+        if RedisStream.stream_is_empty(self):
+            return response
+        
+        for item in self.items:
+            in_range = RedisStream.is_between_range(low, high, item['id'])
+            if in_range:
+                response.append(RedisStream.build_obj(item))
+        return response    
+
 
 class RedisDB:
 
@@ -128,6 +162,12 @@ class RedisDB:
             if ms_latest == ms_earlier:
                 return seq_latest > seq_earlier
         return True
+    
+    def xrange(self, stream_name, start_id, end_id):
+        stream = self.get(stream_name)
+        
+        items = stream.get_items_in_range()
+        
 
     def generate_fresh_id(self, last_id: None | str):
         auto_gen_id = [int(time() * 1000), 0]
