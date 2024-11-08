@@ -34,7 +34,7 @@ class RedisStream:
             return stream.items[-1]['id']
                 
     @staticmethod
-    def is_between_range(low, high, id_):
+    def is_between_range(low, high, id_, exclusive):
         id_ = str(id_)
         high = str(high)
         low = str(low)
@@ -44,7 +44,7 @@ class RedisStream:
         else:
             low = low + '-0' if low.find(RedisStream.SEP) == -1 else low
 
-        higher_than_low = id_ >= low
+        higher_than_low = id_ > low if exclusive else id_ >= low
         lower_than_high = id_ <= high
         
         if high == '+':
@@ -63,13 +63,13 @@ class RedisStream:
         response.append(kv_pairs)
         return response
 
-    def get_items_in_range(self, low, high):
+    def get_items_in_range(self, low, high, exclusive=False):
         response = []
         if RedisStream.stream_is_empty(self):
             return response
         
         for item in self.items:
-            in_range = RedisStream.is_between_range(low, high, item['id'])
+            in_range = RedisStream.is_between_range(low, high, item['id'], exclusive)
             if in_range:
                 response.append(RedisStream.build_obj(item))
         return response    
@@ -174,6 +174,11 @@ class RedisDB:
     def xrange(self, stream_name, start_id, end_id):
         stream = self.get(stream_name)
         return stream.get_items_in_range(start_id, end_id)
+    
+    def xread(self, stream_name, start_id):
+        stream = self.get(stream_name)
+        result = stream.get_items_in_range(start_id, '+', True)
+        return [stream_name, result]
         
     def generate_fresh_id(self, last_id: None | str):
         auto_gen_id = [int(time() * 1000), 0]

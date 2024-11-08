@@ -22,6 +22,7 @@ class CommandEnum(StrEnum):
     TYPE = 'type'
     XADD = 'xadd'
     XRANGE = 'xrange'
+    XREAD = 'xread'
 
 class InvalidCommandCall(Exception):
     pass
@@ -76,6 +77,8 @@ class Command:
                 return self.handle_xadd_cmd(command_arr)
             case CommandEnum.XRANGE:
                 return self.handle_cmd_xrange(command_arr)
+            case CommandEnum.XREAD:
+                return self.handle_cmd_xread(command_arr)
 
         self.curr_sock = None
     
@@ -95,7 +98,14 @@ class Command:
 
         cn_reps = str(len(self.replicas))
         self.curr_sock.sendall(self.encoder.encode(cn_reps.encode('utf-8'), EncodedMessageType.INTEGER))
+    def handle_cmd_xread(self, cmd_arr):
+        self.verify_args_len(CommandEnum.XREAD, 3, cmd_arr)
         
+        cmd_arr = [decode(x) for x in cmd_arr]
+        response = self.storage.xread(cmd_arr[1], cmd_arr[2])
+        msg = self.encoder.encode(response, EncodedMessageType.ARRAY)
+        self.curr_sock.sendall(msg)
+
     def handle_cmd_xrange(self, cmd_arr):
         self.verify_args_len(CommandEnum.XRANGE, 4, cmd_arr)
         
