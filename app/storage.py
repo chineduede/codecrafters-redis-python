@@ -51,10 +51,12 @@ class RedisStream:
     
     @staticmethod
     def build_obj(obj):
-        
-        cc =    obj['id'], [*chain.from_iterable([(v) for k, v in obj['item'].items()])]
-        print(cc)
-        return cc
+        response = [obj['id']]
+        kv_pairs = []
+        for k, v in obj['items'].items():
+            kv_pairs.append(v)
+        response.append(kv_pairs)
+        return response
 
     def get_items_in_range(self, low, high):
         response = []
