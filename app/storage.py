@@ -165,10 +165,8 @@ class RedisDB:
     
     def xrange(self, stream_name, start_id, end_id):
         stream = self.get(stream_name)
+        return stream.get_items_in_range(start_id, end_id)
         
-        items = stream.get_items_in_range()
-        
-
     def generate_fresh_id(self, last_id: None | str):
         auto_gen_id = [int(time() * 1000), 0]
         if last_id is None:
