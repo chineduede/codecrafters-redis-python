@@ -98,11 +98,12 @@ class Command:
 
         cn_reps = str(len(self.replicas))
         self.curr_sock.sendall(self.encoder.encode(cn_reps.encode('utf-8'), EncodedMessageType.INTEGER))
+
     def handle_cmd_xread(self, cmd_arr):
-        self.verify_args_len(CommandEnum.XREAD, 3, cmd_arr)
+        self.verify_args_len(CommandEnum.XREAD, 4, cmd_arr)
         
         cmd_arr = [decode(x) for x in cmd_arr]
-        response = self.storage.xread(cmd_arr[1], cmd_arr[2])
+        response = self.storage.xread(cmd_arr[2], cmd_arr[3])
         msg = self.encoder.encode(response, EncodedMessageType.ARRAY)
         self.curr_sock.sendall(msg)
 
