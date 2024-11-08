@@ -179,8 +179,7 @@ class RedisDB:
         stream = self.get(stream_name)
         # print(self.store)
         result = stream.get_items_in_range(start_id, '+', True)
-        print([stream_name, result])
-        return [stream_name, result]
+        return [[stream_name, result]]
         
     def generate_fresh_id(self, last_id: None | str):
         auto_gen_id = [int(time() * 1000), 0]
