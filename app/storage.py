@@ -177,6 +177,7 @@ class RedisDB:
     
     def xread(self, stream_name, start_id):
         stream = self.get(stream_name)
+        print(stream)
         result = stream.get_items_in_range(start_id, '+', True)
         return [stream_name, result]
         
