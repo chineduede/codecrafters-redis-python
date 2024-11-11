@@ -103,17 +103,34 @@ class Command:
         self.verify_args_len(CommandEnum.XREAD, 4, cmd_arr)
         
         cmd_arr = [decode(x) for x in cmd_arr]
-        streams, keys = [], []
+
+        response = self.storage.xread(**self.parse_xread(cmd_arr))
+        msg = self.encoder.encode(response, EncodedMessageType.ARRAY)
+        self.curr_sock.sendall(msg)
         
-        str_keys = cmd_arr[2:]
+    def parse_xread(self, cmd_arr: list[str]):
+        streams_idx = cmd_arr.index('streams')
+
+        str_keys = cmd_arr[streams_idx+1:]
         s_k_len = len(str_keys)
         mid = s_k_len // 2
         streams = str_keys[:mid]
         keys = str_keys[mid:]
+        block_idx, block = None, None
+        
+        try:
+            block_idx = cmd_arr.index('block')
+        except ValueError:
+            pass
+        
+        if block_idx:
+            block = int(cmd_arr[block_idx+1])
 
-        response = self.storage.xread(streams=streams, keys=keys)
-        msg = self.encoder.encode(response, EncodedMessageType.ARRAY)
-        self.curr_sock.sendall(msg)
+        return {
+            "streams": streams,
+            "keys": keys,
+            "block": block
+        }
 
     def handle_cmd_xrange(self, cmd_arr):
         self.verify_args_len(CommandEnum.XRANGE, 4, cmd_arr)
