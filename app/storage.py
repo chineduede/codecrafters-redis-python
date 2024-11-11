@@ -180,7 +180,6 @@ class RedisDB:
         
         if block_for_ms is not None:
             block_for_ms = int(block_for_ms)
-            print('waiting.......')
             sleep(block_for_ms)
             
 

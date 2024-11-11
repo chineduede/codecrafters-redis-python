@@ -85,6 +85,7 @@ def main(cmd_parser: Command):
 
         while True:
             events = sel.select()
+            print(events)
             # print(events)
             for key, _ in events:
                 cb = key.data
