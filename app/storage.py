@@ -1,5 +1,5 @@
 import pathlib
-from time import time
+from time import time, sleep
 from itertools import chain
 
 from datetime import datetime, timedelta
@@ -176,12 +176,22 @@ class RedisDB:
         return stream.get_items_in_range(start_id, end_id)
     
     def xread(self, **kwargs):
+        block_for_ms = kwargs.get('block')
+        
+        if block_for_ms is not None:
+            block_for_ms = int(block_for_ms)
+            sleep(block_for_ms)
+            
+
         streams, keys = kwargs['streams'], kwargs['keys']
         response = []
         for i, name in enumerate(streams): 
             stream = self.get(name)
-        # print(self.store)
-            result = stream.get_items_in_range(keys[i], '+', True)
+            if len(keys) >= i:
+                key = keys[-1]
+            else:
+                key = keys[i]
+            result = stream.get_items_in_range(key, '+', True)
             response.append([name, result])
         return response
         
