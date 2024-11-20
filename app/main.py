@@ -1,6 +1,7 @@
 import socket  # noqa: F401
 import selectors
 import argparse
+import threading
 
 from app.resp_parser import RespParser
 from app.commands import Command
@@ -17,8 +18,7 @@ parser.add_argument("--replicaof")
 
 sel = selectors.DefaultSelector()
 
-def read(sock: socket.socket, cmd_parser: Command):
-
+def handle_client(sock: socket.socket, cmd_parser: Command):
     parser = RespParser()
     msg_to_propagate = []
     parsed_msg = parser.parse_all(sock, sel, msg_to_propagate)
@@ -29,13 +29,16 @@ def read(sock: socket.socket, cmd_parser: Command):
     for cmd in parsed_msg:
         cmd_parser.handle_cmd(cmd, sock)
 
+
+def read(sock: socket.socket, cmd_parser: Command):
+    thread = threading.Thread(target=handle_client, args=(sock, cmd_parser))
+    thread.start()
+
+
 def accept(sock: socket.socket, cmd_parser):
     conn, _ = sock.accept()
     conn.setblocking(False)
     sel.register(conn, selectors.EVENT_READ, read)
-
-def handle_replica_to_master():
-    pass
 
 
 def handle_master_data(sock: socket.socket, cmd_parser: Command):
@@ -85,7 +88,6 @@ def main(cmd_parser: Command):
 
         while True:
             events = sel.select()
-            print(events)
             # print(events)
             for key, _ in events:
                 cb = key.data

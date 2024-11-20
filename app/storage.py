@@ -1,6 +1,6 @@
 import pathlib
 from time import time, sleep
-from itertools import chain
+from itertools import zip_longest
 
 from datetime import datetime, timedelta
 from app.namespace import ConfigNamespace
@@ -72,7 +72,7 @@ class RedisStream:
             in_range = RedisStream.is_between_range(low, high, item['id'], exclusive)
             if in_range:
                 response.append(RedisStream.build_obj(item))
-        return response    
+        return response
 
 
 class RedisDB:
@@ -177,22 +177,18 @@ class RedisDB:
     
     def xread(self, **kwargs):
         block_for_ms = kwargs.get('block')
-        
         if block_for_ms is not None:
             block_for_ms = int(block_for_ms)
-            sleep(block_for_ms)
-            
+            sleep(block_for_ms // 1000)
 
         streams, keys = kwargs['streams'], kwargs['keys']
         response = []
-        for i, name in enumerate(streams): 
+        for name, key in zip_longest(streams, keys, fillvalue=keys[-1]): 
             stream = self.get(name)
-            if len(keys) >= i:
-                key = keys[-1]
-            else:
-                key = keys[i]
             result = stream.get_items_in_range(key, '+', True)
             response.append([name, result])
+        if len(response) == 1 and len(response[0][1]) == 0:
+            return None
         return response
         
     def generate_fresh_id(self, last_id: None | str):

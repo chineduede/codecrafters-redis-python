@@ -56,7 +56,7 @@ class Command:
             case CommandEnum.PING:
                 return self.handle_ping_cmd()
             case CommandEnum.SET:
-                return True, self.handle_set_cmd(command_arr)
+                return self.handle_set_cmd(command_arr)
             case CommandEnum.GET:
                 return self.handle_get_cmd(command_arr)
             case CommandEnum.CONFIG:
@@ -78,7 +78,7 @@ class Command:
             case CommandEnum.XRANGE:
                 return self.handle_cmd_xrange(command_arr)
             case CommandEnum.XREAD:
-                return self.handle_cmd_xread(command_arr)
+                return self.handle_cmd_xread(command_arr, socket)
 
         self.curr_sock = None
     
@@ -99,15 +99,19 @@ class Command:
         cn_reps = str(len(self.replicas))
         self.curr_sock.sendall(self.encoder.encode(cn_reps.encode('utf-8'), EncodedMessageType.INTEGER))
 
-    def handle_cmd_xread(self, cmd_arr):
+    def handle_cmd_xread(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.XREAD, 4, cmd_arr)
         
         cmd_arr = [decode(x) for x in cmd_arr]
 
         response = self.storage.xread(**self.parse_xread(cmd_arr))
-        msg = self.encoder.encode(response, EncodedMessageType.ARRAY)
-        self.curr_sock.sendall(msg)
-        
+        if response:
+            msg = self.encoder.encode(response, EncodedMessageType.ARRAY)
+        else:
+            msg = self.encoder.encode('', EncodedMessageType.NULL_STR)
+        socket.sendall(msg)
+
+
     def parse_xread(self, cmd_arr: list[str]):
         streams_idx = cmd_arr.index('streams')
 
