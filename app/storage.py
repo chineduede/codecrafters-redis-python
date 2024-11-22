@@ -1,10 +1,14 @@
 import pathlib
+import threading
 from time import time, sleep
 from itertools import zip_longest
 
 from datetime import datetime, timedelta
 from app.namespace import ConfigNamespace
 from app.rdb_parser import RDBParser
+
+event = threading.Event()
+condition = threading.Condition()
 
 class RedisStream:
     SEP = '-'
@@ -132,26 +136,28 @@ class RedisDB:
         return list(self.store.keys())
 
     def xadd(self, stream_name, id, key, value):
-        item_id = id
-        stream = self.get(stream_name)
+        with condition:
+            item_id = id
+            stream = self.get(stream_name)
 
-        if not stream or not isinstance(stream, RedisStream):
-            stream = RedisStream(stream_name)
-        
-        # constant id
-        if item_id.find(RedisStream.ANY) == -1:
-            success = self.validate_entry_id(item_id, stream)
-            if not success:
-                to_ret = False
-                if item_id == RedisStream.FORBIDDEN:
-                    return to_ret, RedisStream.ERR_MSG_1
-                return to_ret, RedisStream.ERR_MSG
-        # generated id
-        else:
-            item_id = self.generate_id(item_id, stream)
-        stream.append(key=key, value=value, id=item_id)
-        self.store[stream_name] = {'value': stream }
-        return True, item_id
+            if not stream or not isinstance(stream, RedisStream):
+                stream = RedisStream(stream_name)
+            
+            # constant id
+            if item_id.find(RedisStream.ANY) == -1:
+                success = self.validate_entry_id(item_id, stream)
+                if not success:
+                    to_ret = False
+                    if item_id == RedisStream.FORBIDDEN:
+                        return to_ret, RedisStream.ERR_MSG_1
+                    return to_ret, RedisStream.ERR_MSG
+            # generated id
+            else:
+                item_id = self.generate_id(item_id, stream)
+            stream.append(key=key, value=value, id=item_id)
+            self.store[stream_name] = {'value': stream }
+            condition.notify_all()
+            return True, item_id
     
     def validate_entry_id(self, id: str, stream: RedisStream):
         if id == RedisStream.FORBIDDEN:
@@ -179,7 +185,11 @@ class RedisDB:
         block_for_ms = kwargs.get('block')
         if block_for_ms is not None:
             block_for_ms = int(block_for_ms)
-            sleep(block_for_ms // 1000)
+            if not block_for_ms:
+                with condition:
+                    condition.wait()
+            else:
+                sleep(block_for_ms // 1000)
 
         streams, keys = kwargs['streams'], kwargs['keys']
         response = []
