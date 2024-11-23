@@ -181,20 +181,34 @@ class RedisDB:
         stream = self.get(stream_name)
         return stream.get_items_in_range(start_id, end_id)
     
+    def _get_latest_keys(self, streams: list[str], keys: list[str]):
+        oldest_keys_mapping = {}
+        for name, _ in zip_longest(streams, keys, fillvalue=keys[-1]): 
+            stream = self.get(name)
+            if stream:
+                id = RedisStream.get_last_id(stream)
+                oldest_keys_mapping[name] = id if id else ''
+        return oldest_keys_mapping
+
+
     def xread(self, **kwargs):
         block_for_ms = kwargs.get('block')
+        streams, keys = kwargs['streams'], kwargs['keys']
+        latest_mapping = None
         if block_for_ms is not None:
             block_for_ms = int(block_for_ms)
             if not block_for_ms:
+                latest_mapping = self._get_latest_keys(streams, keys)
                 with condition:
                     condition.wait()
             else:
                 sleep(block_for_ms // 1000)
 
-        streams, keys = kwargs['streams'], kwargs['keys']
         response = []
         for name, key in zip_longest(streams, keys, fillvalue=keys[-1]): 
             stream = self.get(name)
+            if latest_mapping:
+                key = latest_mapping[name]
             result = stream.get_items_in_range(key, '+', True)
             response.append([name, result])
         if len(response) == 1 and len(response[0][1]) == 0:
