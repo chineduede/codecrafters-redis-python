@@ -76,6 +76,12 @@ class Command:
             raise InvalidCommandCall(f'Must pass a command.')
         cmd = command_arr[0].strip().lower()
 
+        # prevents infinite recursion because we might
+        # call this method in one of the methods handling
+        # one of the commands in the array
+        if cmd in [CommandEnum.EXEC, CommandEnum.MULTI]:
+            return
+
         match cmd.decode('utf-8'):
             case CommandEnum.ECHO:
                 return self.handle_echo_cmd(command_arr, socket)
@@ -128,7 +134,12 @@ class Command:
         if not command_queue.in_transaction():
             socket.sendall(self.encoder.encode('ERR EXEC without MULTI', EncodedMessageType.ERROR))
         else:
-            pass
+            command_queue.end_transaction()
+            response = []
+
+            for cmd in command_queue.get_commands():
+                response.append(self.handle_cmd(cmd, socket))
+            socket.sendall(self.encoder.encode(response, EncodedMessageType.ARRAY))
 
     def handle_wait_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.WAIT, 3, cmd_arr)
