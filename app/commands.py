@@ -110,7 +110,7 @@ class Command:
             case CommandEnum.MULTI:
                 return self.handle_multi_cmd(command_arr, socket)
             case CommandEnum.EXEC:
-                return self.handle_multi_cmd(command_arr, socket)
+                return self.handle_exec_cmd(command_arr, socket)
     
     def accum_proc(self, cmd_arr):
         encoded = self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY)
