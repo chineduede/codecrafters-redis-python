@@ -9,6 +9,7 @@ from app.storage import RedisDB
 from app.constants import SET_ARGS, BOUNDARY
 from app.namespace import ConfigNamespace
 from app.util import decode
+from app.replicas import Replicas
 
 local = threading.local()
 
@@ -64,11 +65,11 @@ class CantEncodeMessage(Exception):
 
 class Command:
 
-    def __init__(self, *, encoder: RespEncoder = None, storage: RedisDB = None) -> None:
+    def __init__(self, *, encoder: RespEncoder = None, storage: RedisDB = None, replicas: Replicas | None = None) -> None:
         self.encoder = ENCODER
         self.storage = RedisDB() if storage is None else storage
-        self.replicas: list[socket] = []
         self.processed_offset = 0
+        self.replicas = replicas
 
     def handle_cmd(self, command_arr: list[bytes] | bytes, socket: socket):
         if not isinstance(command_arr, list):
@@ -263,7 +264,8 @@ class Command:
         self.verify_args_len(CommandEnum.REPLCONF, 2, cmd_arr)
         msg = self.encoder.encode('OK', EncodedMessageType.SIMPLE_STRING)
         if cmd_arr[1].lower() == b'listening-port':
-            self.replicas.append(socket)
+            if self.replicas:
+                self.replicas.add_replica(socket)
         if cmd_arr[1].lower() == b'getack':
             msg = self.encoder.encode([CommandEnum.REPLCONF, 'ACK', self.processed_offset], EncodedMessageType.ARRAY)
         if msg:
@@ -358,8 +360,9 @@ class Command:
             socket.sendall(msg)
 
             if not ConfigNamespace.is_replica():
-                for replica in self.replicas:
-                    replica.sendall(self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY))
+                if self.replicas:
+                    for replica in self.replicas.get_all_replicas():
+                        replica.sendall(self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY))
         return msg
 
 

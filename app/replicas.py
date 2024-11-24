@@ -5,6 +5,9 @@ class Replicas:
     def __init__(self) -> None:
         self.replicas: list[socket.socket] = []
 
+    def __len__(self):
+        return len(self.replicas)
+
     def add_replica(self, sock: socket.socket):
         self.replicas.append(sock)
 

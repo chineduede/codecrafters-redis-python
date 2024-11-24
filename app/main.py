@@ -47,7 +47,7 @@ def accept(sock: socket.socket):
 
 def handle_master_data(sock: socket.socket):
     parser = RespParser()
-    cmd_parser = Command(storage=storage, replicas=replicas)
+    cmd_parser = Command(storage=storage)
     parsed_msg = parser.parse_all(sock, sel)
 
     if not parsed_msg:
