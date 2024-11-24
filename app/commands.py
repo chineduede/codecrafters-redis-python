@@ -11,9 +11,7 @@ from app.namespace import ConfigNamespace
 from app.util import decode
 from app.replicas import Replicas
 
-local = threading.local()
-
-class CommandQueue(threading.local):
+class CommandQueue():
 
     def __init__(self) -> None:
         self.queue = []
@@ -35,8 +33,6 @@ class CommandQueue(threading.local):
     def get_commands(self):
         for cmd in self.queue:
             yield cmd
-
-command_queue = CommandQueue()
 
 class CommandEnum(StrEnum):
     ECHO = 'echo'
@@ -70,6 +66,7 @@ class Command:
         self.storage = RedisDB() if storage is None else storage
         self.processed_offset = 0
         self.replicas = replicas
+        self.cmd_queue = CommandQueue()
 
     def handle_cmd(self, command_arr: list[bytes] | bytes, socket: socket):
         if not isinstance(command_arr, list):
@@ -130,21 +127,18 @@ class Command:
             raise InvalidCommandCall(f'{_type.upper()} cmd must be called with enough argument(s). Called with only {num} argument(s).')
 
     def handle_multi_cmd(self, cmd_arr, socket: socket):
-        command_queue.start_transaction()
-        local.red = 'blue'
-        print(threading.get_native_id())
-        local.__dict__
+        self.cmd_queue.start_transaction()
         socket.sendall(self.encoder.encode('OK', EncodedMessageType.SIMPLE_STRING))
 
     def handle_exec_cmd(self, cmd_arr, socket: socket):
         print(threading.get_native_id())
-        if not command_queue.in_transaction():
+        if not self.cmd_queue.in_transaction():
             socket.sendall(self.encoder.encode('ERR EXEC without MULTI', EncodedMessageType.ERROR))
         else:
-            command_queue.end_transaction()
+            self.cmd_queue.end_transaction()
             response = []
 
-            for cmd in command_queue.get_commands():
+            for cmd in self.cmd_queue.get_commands():
                 response.append(self.handle_cmd(cmd, socket))
             socket.sendall(self.encoder.encode(response, EncodedMessageType.ARRAY))
 
@@ -162,8 +156,8 @@ class Command:
         
         cmd_arr = [decode(x) for x in cmd_arr]
 
-        if command_queue.in_transaction():
-            command_queue.add_command(cmd_arr)
+        if self.cmd_queue.in_transaction():
+            self.cmd_queue.add_command(cmd_arr)
             return socket.sendall(QUEUED)
 
         response = self.storage.xread(**self.parse_xread(cmd_arr))
@@ -175,8 +169,8 @@ class Command:
         return msg
 
     def handle_incr_cmd(self, cmd_arr, socket: socket):
-        if command_queue.in_transaction():
-            command_queue.add_command(cmd_arr)
+        if self.cmd_queue.in_transaction():
+            self.cmd_queue.add_command(cmd_arr)
             return socket.sendall(QUEUED)
 
         self.verify_args_len(CommandEnum.INCR, 2, cmd_arr)
@@ -228,8 +222,8 @@ class Command:
 
     def handle_xrange_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.XRANGE, 4, cmd_arr)
-        if command_queue.in_transaction():
-            command_queue.add_command(cmd_arr)
+        if self.cmd_queue.in_transaction():
+            self.cmd_queue.add_command(cmd_arr)
             return socket.sendall(QUEUED)
         
         cmd_arr = [decode(x) for x in cmd_arr]
@@ -240,8 +234,8 @@ class Command:
 
     def handle_xadd_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.XADD, 5, cmd_arr)
-        if command_queue.in_transaction():
-            command_queue.add_command(cmd_arr)
+        if self.cmd_queue.in_transaction():
+            self.cmd_queue.add_command(cmd_arr)
             return socket.sendall(QUEUED)
         
         cmd_arr = [decode(x) for x in cmd_arr]
@@ -282,8 +276,8 @@ class Command:
 
     def handle_keys_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.KEYS, 2, cmd_arr)
-        if command_queue.in_transaction():
-            command_queue.add_command(cmd_arr)
+        if self.cmd_queue.in_transaction():
+            self.cmd_queue.add_command(cmd_arr)
             return socket.sendall(QUEUED)
         key_arg = cmd_arr[1]
         if isinstance(key_arg, bytes):
@@ -309,8 +303,8 @@ class Command:
 
     def handle_get_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.GET, 2, cmd_arr)
-        if command_queue.in_transaction():
-            command_queue.add_command(cmd_arr)
+        if self.cmd_queue.in_transaction():
+            self.cmd_queue.add_command(cmd_arr)
             return socket.sendall(QUEUED)
         msg = self.storage.get(cmd_arr[1].decode('utf-8'))
         if msg is None:
@@ -322,8 +316,8 @@ class Command:
         
     def handle_get_type_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.GET, 2, cmd_arr)
-        if command_queue.in_transaction():
-            command_queue.add_command(cmd_arr)
+        if self.cmd_queue.in_transaction():
+            self.cmd_queue.add_command(cmd_arr)
             return socket.sendall(QUEUED)
         msg = self.storage.get_type(cmd_arr[1].decode('utf-8'))
         if msg is None:
@@ -347,8 +341,8 @@ class Command:
     
     def handle_set_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.SET, 3, cmd_arr)
-        if command_queue.in_transaction():
-            command_queue.add_command(cmd_arr)
+        if self.cmd_queue.in_transaction():
+            self.cmd_queue.add_command(cmd_arr)
             return socket.sendall(QUEUED)
         other_args = self.parse_set_args(cmd_arr)
         resp = self.storage.set(cmd_arr[1], cmd_arr[2], **other_args)
@@ -368,8 +362,8 @@ class Command:
 
     def handle_echo_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.ECHO, 2, cmd_arr)
-        if command_queue.in_transaction():
-            command_queue.add_command(cmd_arr)
+        if self.cmd_queue.in_transaction():
+            self.cmd_queue.add_command(cmd_arr)
             return socket.sendall(QUEUED)
         encoded_msg = self.encoder.encode(cmd_arr[1], EncodedMessageType.BULK_STRING)
         if encoded_msg is None:
