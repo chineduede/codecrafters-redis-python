@@ -128,9 +128,11 @@ class Command:
 
     def handle_multi_cmd(self, cmd_arr, socket: socket):
         command_queue.start_transaction()
+        print(command_queue.in_transaction())
         socket.sendall(self.encoder.encode('OK', EncodedMessageType.SIMPLE_STRING))
 
     def handle_exec_cmd(self, cmd_arr, socket: socket):
+        print(command_queue.in_transaction())
         if not command_queue.in_transaction():
             socket.sendall(self.encoder.encode('ERR EXEC without MULTI', EncodedMessageType.ERROR))
         else:
