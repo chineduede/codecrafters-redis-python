@@ -124,6 +124,8 @@ class Command:
             if isinstance(value, int):
                 value = int(value)
                 value += 1
+            else:
+                return socket.sendall(self.encoder.encode('ERR value is not an integer or out of range', EncodedMessageType.ERROR))
         self.storage.set(key, str(value))
 
         socket.sendall(self.encoder.encode(value, EncodedMessageType.INTEGER))
