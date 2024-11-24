@@ -112,10 +112,15 @@ class Command:
         self.verify_args_len(CommandEnum.INCR, 2, cmd_arr)
         key = cmd_arr[1].decode('utf-8')
         value = self.storage.get(key)
+        try:
+            value = int(value)
+        except:
+            pass
+
         if isinstance(value, int):
             value = int(value)
         value += 1
-        self.storage.set(key, value)
+        self.storage.set(key, str(value))
 
         socket.sendall(self.encoder.encode(value, EncodedMessageType.INTEGER))
 
@@ -241,7 +246,6 @@ class Command:
     def handle_set_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.SET, 3, cmd_arr)
         other_args = self.parse_set_args(cmd_arr)
-        print(cmd_arr)
         resp = self.storage.set(cmd_arr[1], cmd_arr[2], **other_args)
         msg = self.encoder.encode(resp, EncodedMessageType.SIMPLE_STRING)
 
