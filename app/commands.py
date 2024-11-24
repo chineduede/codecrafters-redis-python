@@ -111,11 +111,13 @@ class Command:
     def handle_incr_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.INCR, 2, cmd_arr)
         key = cmd_arr[1].decode('utf-8')
-        msg = self.storage.get(key) + 1
-        self.storage.set(key, msg)
+        value = self.storage.get(key)
+        if isinstance(value, int):
+            value = int(value)
+        value += 1
+        self.storage.set(key, value)
 
-        socket.sendall(self.encoder.encode(msg, EncodedMessageType.INTEGER))
-
+        socket.sendall(self.encoder.encode(value, EncodedMessageType.INTEGER))
 
     def parse_xread(self, cmd_arr: list[str]):
         streams_idx = cmd_arr.index('streams')
@@ -239,6 +241,7 @@ class Command:
     def handle_set_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.SET, 3, cmd_arr)
         other_args = self.parse_set_args(cmd_arr)
+        print(cmd_arr)
         resp = self.storage.set(cmd_arr[1], cmd_arr[2], **other_args)
         msg = self.encoder.encode(resp, EncodedMessageType.SIMPLE_STRING)
 
