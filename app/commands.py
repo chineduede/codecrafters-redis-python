@@ -52,6 +52,7 @@ class CommandEnum(StrEnum):
     XREAD = 'xread'
     INCR = 'incr'
     MULTI = 'multi'
+    EXEC = 'exec'
 
 class InvalidCommandCall(Exception):
     pass
@@ -107,6 +108,8 @@ class Command:
             case CommandEnum.INCR:
                 return self.handle_incr_cmd(command_arr, socket)
             case CommandEnum.MULTI:
+                return self.handle_multi_cmd(command_arr, socket)
+            case CommandEnum.EXEC:
                 return self.handle_multi_cmd(command_arr, socket)
     
     def accum_proc(self, cmd_arr):
