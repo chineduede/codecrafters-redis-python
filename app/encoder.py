@@ -60,5 +60,6 @@ class RespEncoder:
     
 
 ENCODER = RespEncoder()
+QUEUED = b'+QUEUED\r\n'
 # if __name__ == "__main__":
     # print(encoder.encode(['red', 'blue'], EncodedMessageType.ARRAY))

@@ -1,12 +1,39 @@
 import re
 from enum import StrEnum
 from socket import socket
+from typing import Any
+import threading
 
-from app.encoder import RespEncoder, EncodedMessageType, ENCODER
+from app.encoder import RespEncoder, EncodedMessageType, ENCODER, QUEUED
 from app.storage import RedisDB
 from app.constants import SET_ARGS, BOUNDARY
 from app.namespace import ConfigNamespace
 from app.util import decode
+
+class CommandQueue(threading.local):
+
+    def __init__(self) -> None:
+        self.queue = []
+        self.in_trx = False
+
+    def add_command(self, cmd_arr: list[Any]):
+        self.queue.append(cmd_arr)
+
+    def start_transaction(self):
+        self.in_trx = True
+
+    def end_transaction(self):
+        self.queue = []
+        self.in_trx = False
+
+    def in_transaction(self):
+        return self.in_trx
+
+    def get_commands(self):
+        for cmd in self.queue:
+            yield cmd
+
+command_queue = CommandQueue()
 
 class CommandEnum(StrEnum):
     ECHO = 'echo'
@@ -24,6 +51,7 @@ class CommandEnum(StrEnum):
     XRANGE = 'xrange'
     XREAD = 'xread'
     INCR = 'incr'
+    MULTI = 'multi'
 
 class InvalidCommandCall(Exception):
     pass
@@ -78,6 +106,8 @@ class Command:
                 return self.handle_xread_cmd(command_arr, socket)
             case CommandEnum.INCR:
                 return self.handle_incr_cmd(command_arr, socket)
+            case CommandEnum.MULTI:
+                return self.handle_multi_cmd(command_arr, socket)
     
     def accum_proc(self, cmd_arr):
         encoded = self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY)
@@ -86,6 +116,16 @@ class Command:
     def verify_args_len(self, _type, num, args):
         if len(args) < num:
             raise InvalidCommandCall(f'{_type.upper()} cmd must be called with enough argument(s). Called with only {num} argument(s).')
+
+    def handle_multi_cmd(self, cmd_arr, socket: socket):
+        command_queue.start_transaction()
+        socket.sendall(self.encoder.encode('OK', EncodedMessageType.SIMPLE_STRING))
+
+    def handle_exec_cmd(self, cmd_arr, socket: socket):
+        if not command_queue.in_transaction():
+            socket.sendall(self.encoder.encode('ERR EXEC without MULTI', EncodedMessageType.ERROR))
+        else:
+            pass
 
     def handle_wait_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.WAIT, 3, cmd_arr)
@@ -101,14 +141,23 @@ class Command:
         
         cmd_arr = [decode(x) for x in cmd_arr]
 
+        if command_queue.in_transaction():
+            command_queue.add_command(cmd_arr)
+            return socket.sendall(QUEUED)
+
         response = self.storage.xread(**self.parse_xread(cmd_arr))
         if response:
             msg = self.encoder.encode(response, EncodedMessageType.ARRAY)
         else:
             msg = self.encoder.encode('', EncodedMessageType.NULL_STR)
         socket.sendall(msg)
+        return msg
 
     def handle_incr_cmd(self, cmd_arr, socket: socket):
+        if command_queue.in_transaction():
+            command_queue.add_command(cmd_arr)
+            return socket.sendall(QUEUED)
+
         self.verify_args_len(CommandEnum.INCR, 2, cmd_arr)
         key = cmd_arr[1].decode('utf-8')
         value = self.storage.get(key)
@@ -128,7 +177,9 @@ class Command:
                 return socket.sendall(self.encoder.encode('ERR value is not an integer or out of range', EncodedMessageType.ERROR))
         self.storage.set(key, str(value))
 
-        socket.sendall(self.encoder.encode(value, EncodedMessageType.INTEGER))
+        to_send = self.encoder.encode(value, EncodedMessageType.INTEGER)
+        socket.sendall(to_send)
+        return to_send
 
     def parse_xread(self, cmd_arr: list[str]):
         streams_idx = cmd_arr.index('streams')
@@ -156,14 +207,21 @@ class Command:
 
     def handle_xrange_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.XRANGE, 4, cmd_arr)
+        if command_queue.in_transaction():
+            command_queue.add_command(cmd_arr)
+            return socket.sendall(QUEUED)
         
         cmd_arr = [decode(x) for x in cmd_arr]
         response = self.storage.xrange(cmd_arr[1], cmd_arr[2], cmd_arr[3])
         msg = self.encoder.encode(response, EncodedMessageType.ARRAY)
         socket.sendall(msg)
+        return msg
 
     def handle_xadd_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.XADD, 5, cmd_arr)
+        if command_queue.in_transaction():
+            command_queue.add_command(cmd_arr)
+            return socket.sendall(QUEUED)
         
         cmd_arr = [decode(x) for x in cmd_arr]
         success, response = self.storage.xadd(cmd_arr[1], cmd_arr[2], cmd_arr[3], cmd_arr[4])
@@ -173,6 +231,7 @@ class Command:
         else:
             msg = self.encoder.encode(response, EncodedMessageType.BULK_STRING)
         socket.sendall(msg)
+        return msg
         
     def handle_psync_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.PSYNC, 2, cmd_arr)
@@ -201,12 +260,17 @@ class Command:
 
     def handle_keys_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.KEYS, 2, cmd_arr)
+        if command_queue.in_transaction():
+            command_queue.add_command(cmd_arr)
+            return socket.sendall(QUEUED)
         key_arg = cmd_arr[1]
         if isinstance(key_arg, bytes):
             key_arg = key_arg.decode('utf-8')
         regex = re.compile(re.escape(key_arg).replace(r'\*', '.*').replace(r'\?', '.'))
         matches = [s for s in self.storage.get_all_keys() if regex.match(s)]
-        socket.sendall(self.encoder.encode(matches, EncodedMessageType.ARRAY))
+        matches = self.encoder.encode(matches, EncodedMessageType.ARRAY)
+        socket.sendall(matches)
+        return matches
 
     def handle_config_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.CONFIG, 3, cmd_arr)
@@ -217,25 +281,35 @@ class Command:
 
     def handle_config_get(self, key, socket: socket):
         value = getattr(ConfigNamespace, key, None)
-        socket.sendall(self.encoder.encode([key, value], EncodedMessageType.ARRAY))
+        res = self.encoder.encode([key, value], EncodedMessageType.ARRAY)
+        socket.sendall(res)
+        return res
 
     def handle_get_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.GET, 2, cmd_arr)
+        if command_queue.in_transaction():
+            command_queue.add_command(cmd_arr)
+            return socket.sendall(QUEUED)
         msg = self.storage.get(cmd_arr[1].decode('utf-8'))
         if msg is None:
             msg = self.encoder.encode('', EncodedMessageType.NULL_STR)
         else:
             msg = self.encoder.encode(msg, EncodedMessageType.BULK_STRING)
         socket.sendall(msg)
+        return msg
         
     def handle_get_type_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.GET, 2, cmd_arr)
+        if command_queue.in_transaction():
+            command_queue.add_command(cmd_arr)
+            return socket.sendall(QUEUED)
         msg = self.storage.get_type(cmd_arr[1].decode('utf-8'))
         if msg is None:
             msg = self.encoder.encode('', EncodedMessageType.NULL_STR)
         else:
             msg = self.encoder.encode(msg, EncodedMessageType.SIMPLE_STRING)
         socket.sendall(msg)
+        return msg
     
     def parse_set_args(self, cmd_arr):
         # list of args for SET cmd, we return a dict
@@ -251,6 +325,9 @@ class Command:
     
     def handle_set_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.SET, 3, cmd_arr)
+        if command_queue.in_transaction():
+            command_queue.add_command(cmd_arr)
+            return socket.sendall(QUEUED)
         other_args = self.parse_set_args(cmd_arr)
         resp = self.storage.set(cmd_arr[1], cmd_arr[2], **other_args)
         msg = self.encoder.encode(resp, EncodedMessageType.SIMPLE_STRING)
@@ -263,10 +340,14 @@ class Command:
             if not ConfigNamespace.is_replica():
                 for replica in self.replicas:
                     replica.sendall(self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY))
+        return msg
 
 
     def handle_echo_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.ECHO, 2, cmd_arr)
+        if command_queue.in_transaction():
+            command_queue.add_command(cmd_arr)
+            return socket.sendall(QUEUED)
         encoded_msg = self.encoder.encode(cmd_arr[1], EncodedMessageType.BULK_STRING)
         if encoded_msg is None:
             raise CantEncodeMessage(f'Cant encode message.')
