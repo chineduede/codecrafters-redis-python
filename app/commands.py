@@ -2,13 +2,12 @@ import re
 from enum import StrEnum
 from socket import socket
 from typing import Any
-import threading
 
 from app.encoder import RespEncoder, EncodedMessageType, ENCODER, QUEUED
 from app.storage import RedisDB
 from app.constants import SET_ARGS, BOUNDARY
 from app.namespace import ConfigNamespace
-from app.util import decode
+from app.util import decode, decode_resp
 from app.replicas import Replicas
 
 class CommandQueue():
@@ -31,8 +30,7 @@ class CommandQueue():
         return self.in_trx
 
     def get_commands(self):
-        for cmd in self.queue:
-            yield cmd
+        return self.queue
 
 class CommandEnum(StrEnum):
     ECHO = 'echo'
@@ -68,7 +66,7 @@ class Command:
         self.replicas = replicas
         self.cmd_queue = CommandQueue()
 
-    def handle_cmd(self, command_arr: list[bytes] | bytes, socket: socket):
+    def handle_cmd(self, command_arr: list[bytes] | bytes, socket: socket, send_to_sock = True):
         if not isinstance(command_arr, list):
             return {}
 
@@ -84,13 +82,13 @@ class Command:
 
         match cmd.decode('utf-8'):
             case CommandEnum.ECHO:
-                return self.handle_echo_cmd(command_arr, socket)
+                return self.handle_echo_cmd(command_arr, socket, send_to_sock)
             case CommandEnum.PING:
                 return self.handle_ping_cmd(socket)
             case CommandEnum.SET:
-                return self.handle_set_cmd(command_arr, socket)
+                return self.handle_set_cmd(command_arr, socket, send_to_sock)
             case CommandEnum.GET:
-                return self.handle_get_cmd(command_arr, socket)
+                return self.handle_get_cmd(command_arr, socket, send_to_sock)
             case CommandEnum.CONFIG:
                 return self.handle_config_cmd(command_arr, socket)
             case CommandEnum.KEYS:
@@ -112,7 +110,7 @@ class Command:
             case CommandEnum.XREAD:
                 return self.handle_xread_cmd(command_arr, socket)
             case CommandEnum.INCR:
-                return self.handle_incr_cmd(command_arr, socket)
+                return self.handle_incr_cmd(command_arr, socket, send_to_sock)
             case CommandEnum.MULTI:
                 return self.handle_multi_cmd(command_arr, socket)
             case CommandEnum.EXEC:
@@ -131,16 +129,22 @@ class Command:
         socket.sendall(self.encoder.encode('OK', EncodedMessageType.SIMPLE_STRING))
 
     def handle_exec_cmd(self, cmd_arr, socket: socket):
-        print(threading.get_native_id())
         if not self.cmd_queue.in_transaction():
             socket.sendall(self.encoder.encode('ERR EXEC without MULTI', EncodedMessageType.ERROR))
         else:
-            self.cmd_queue.end_transaction()
             response = []
+            queued_cmds = self.cmd_queue.get_commands()
+            self.cmd_queue.end_transaction()
 
-            for cmd in self.cmd_queue.get_commands():
-                response.append(self.handle_cmd(cmd, socket))
-            socket.sendall(self.encoder.encode(response, EncodedMessageType.ARRAY))
+            # socket.sendall(self.encoder.encode(['OK', 12, 1, 2], EncodedMessageType.ARRAY))
+            # print('******')
+            for cmd in queued_cmds:
+                ret = self.handle_cmd(cmd, socket, False)
+                response.append(ret)
+
+            print(response)
+            to_send = self.encoder.encode(response, EncodedMessageType.ARRAY, already_encoded = True)
+            socket.sendall(to_send)
 
     def handle_wait_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.WAIT, 3, cmd_arr)
@@ -168,7 +172,7 @@ class Command:
         socket.sendall(msg)
         return msg
 
-    def handle_incr_cmd(self, cmd_arr, socket: socket):
+    def handle_incr_cmd(self, cmd_arr, socket: socket, send_to_sock: bool):
         if self.cmd_queue.in_transaction():
             self.cmd_queue.add_command(cmd_arr)
             return socket.sendall(QUEUED)
@@ -193,7 +197,8 @@ class Command:
         self.storage.set(key, str(value))
 
         to_send = self.encoder.encode(value, EncodedMessageType.INTEGER)
-        socket.sendall(to_send)
+        if send_to_sock:
+            socket.sendall(to_send)
         return to_send
 
     def parse_xread(self, cmd_arr: list[str]):
@@ -301,7 +306,7 @@ class Command:
         socket.sendall(res)
         return res
 
-    def handle_get_cmd(self, cmd_arr, socket: socket):
+    def handle_get_cmd(self, cmd_arr, socket: socket, send_to_sock: bool):
         self.verify_args_len(CommandEnum.GET, 2, cmd_arr)
         if self.cmd_queue.in_transaction():
             self.cmd_queue.add_command(cmd_arr)
@@ -311,7 +316,8 @@ class Command:
             msg = self.encoder.encode('', EncodedMessageType.NULL_STR)
         else:
             msg = self.encoder.encode(msg, EncodedMessageType.BULK_STRING)
-        socket.sendall(msg)
+        if send_to_sock:
+            socket.sendall(msg)
         return msg
         
     def handle_get_type_cmd(self, cmd_arr, socket: socket):
@@ -339,7 +345,7 @@ class Command:
         return args_dict
 
     
-    def handle_set_cmd(self, cmd_arr, socket: socket):
+    def handle_set_cmd(self, cmd_arr, socket: socket, send_to_sock):
         self.verify_args_len(CommandEnum.SET, 3, cmd_arr)
         if self.cmd_queue.in_transaction():
             self.cmd_queue.add_command(cmd_arr)
@@ -351,7 +357,8 @@ class Command:
         if hasattr(ConfigNamespace, 'master_conn') and ConfigNamespace.master_conn is socket:
             self.accum_proc(cmd_arr)
         else:
-            socket.sendall(msg)
+            if send_to_sock:
+                socket.sendall(msg)
 
             if not ConfigNamespace.is_replica():
                 if self.replicas:
@@ -360,7 +367,7 @@ class Command:
         return msg
 
 
-    def handle_echo_cmd(self, cmd_arr, socket: socket):
+    def handle_echo_cmd(self, cmd_arr, socket: socket, send_to_sock: bool):
         self.verify_args_len(CommandEnum.ECHO, 2, cmd_arr)
         if self.cmd_queue.in_transaction():
             self.cmd_queue.add_command(cmd_arr)
@@ -368,7 +375,8 @@ class Command:
         encoded_msg = self.encoder.encode(cmd_arr[1], EncodedMessageType.BULK_STRING)
         if encoded_msg is None:
             raise CantEncodeMessage(f'Cant encode message.')
-        socket.sendall(encoded_msg)
+        if send_to_sock:
+            socket.sendall(encoded_msg)
         return encoded_msg
 
     def handle_ping_cmd(self, socket: socket):

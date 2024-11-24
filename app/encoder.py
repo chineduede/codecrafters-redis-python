@@ -38,20 +38,21 @@ class RespEncoder:
     def encode_bulk_msg(self, message) -> bytes:
         return BULK_STRING + str(len(message)).encode() + BOUNDARY + message + BOUNDARY
     
-    def encode_array(self, array, *, encode_type = EncodedMessageType.BULK_STRING):
+    def encode_array(self, array, *, already_encoded = False, encode_type = EncodedMessageType.BULK_STRING):
         to_ret = [ARRAY, str(len(array)).encode(), BOUNDARY]
 
         for element in array:
-            if isinstance(element, list):
-                e = self.encode_array(element)
-            elif element is None:
-                e = self.null_bulk_str()
-            else:
-                e = self.encode(element, encode_type)
+            if not already_encoded:
+                if isinstance(element, list):
+                    element = self.encode_array(element)
+                elif element is None:
+                    element = self.null_bulk_str()
+                else:
+                    element = self.encode(element, encode_type)
 
-            if e is None:
-                e = b''
-            to_ret.append(e)
+                if element is None:
+                    element = b''
+            to_ret.append(element)
         return b''.join(to_ret)
             
     @staticmethod

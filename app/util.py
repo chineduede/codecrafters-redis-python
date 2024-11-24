@@ -1,4 +1,10 @@
+import threading
+
 from enum import ReprEnum
+
+from app.resp_parser import RespParser
+
+_parser = RespParser()
 
 def decode(msg: bytes | None | list | int):
     if msg is None:
@@ -18,3 +24,6 @@ def encode(msg: bytes | None | list | int):
         return [encode(m) for m in msg]
     return msg
 
+def decode_resp(arr: list[bytes]):
+    res = [encode(_parser.parse(data)) for data in arr]
+    return res

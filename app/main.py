@@ -21,20 +21,27 @@ storage = RedisDB()
 replicas = Replicas()
 
 def handle_client(sock: socket.socket, cmd_parser: Command):
-    parser = RespParser()
-    msg_to_propagate = []
-    parsed_msg = parser.parse_all(sock, sel, msg_to_propagate)
-    # print('main read', parsed_msg)
-    if parsed_msg is None:
-        return
+    try:
+        parser = RespParser()
+        msg_to_propagate = []
+        parsed_msg = parser.parse_all(sock, sel, msg_to_propagate)
+        # print('main read', parsed_msg)
+        if parsed_msg is None:
+            return
 
-    for cmd in parsed_msg:
-        cmd_parser.handle_cmd(cmd, sock)
+        for cmd in parsed_msg:
+            cmd_parser.handle_cmd(cmd, sock)
+    except Exception as e:
+        print(f"Exception in thread {threading.current_thread().name}: {e}")
+
+        import traceback
+        traceback.print_exc()
 
 def read(cmd_parser: Command):
     def inner(sock: socket.socket):
         thread = threading.Thread(target=handle_client, args=(sock, cmd_parser))
         thread.start()
+
     return inner
 
 
