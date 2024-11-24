@@ -132,7 +132,7 @@ class Command:
         socket.sendall(self.encoder.encode('OK', EncodedMessageType.SIMPLE_STRING))
 
     def handle_exec_cmd(self, cmd_arr, socket: socket):
-        print(threading.get_ident())
+        print(command_queue.in_trx)
         if not command_queue.in_transaction():
             socket.sendall(self.encoder.encode('ERR EXEC without MULTI', EncodedMessageType.ERROR))
         else:
