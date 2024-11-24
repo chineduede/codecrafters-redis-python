@@ -112,14 +112,18 @@ class Command:
         self.verify_args_len(CommandEnum.INCR, 2, cmd_arr)
         key = cmd_arr[1].decode('utf-8')
         value = self.storage.get(key)
-        try:
-            value = int(value)
-        except:
-            pass
 
-        if isinstance(value, int):
-            value = int(value)
-        value += 1
+        if not value:
+            value = 1
+        else:
+            try:
+                value = int(value)
+            except:
+                pass
+
+            if isinstance(value, int):
+                value = int(value)
+                value += 1
         self.storage.set(key, str(value))
 
         socket.sendall(self.encoder.encode(value, EncodedMessageType.INTEGER))
