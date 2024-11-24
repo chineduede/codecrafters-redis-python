@@ -10,7 +10,6 @@ from app.rdb_parser import RDBParser
 event = threading.Event()
 condition = threading.Condition()
 
-
 class RedisStream:
     SEP = '-'
     FORBIDDEN = '0-0'
