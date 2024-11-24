@@ -31,6 +31,7 @@ def handle_client(sock: socket.socket, cmd_parser: Command):
 
 
 def read(sock: socket.socket, cmd_parser: Command):
+    print('Starting new thread', sock)
     thread = threading.Thread(target=handle_client, args=(sock, cmd_parser))
     thread.start()
 
