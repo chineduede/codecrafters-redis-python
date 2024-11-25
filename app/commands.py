@@ -188,23 +188,18 @@ class Command:
         self.verify_args_len(CommandEnum.INCR, 2, cmd_arr)
         key = cmd_arr[1].decode('utf-8')
         value = self.storage.get(key)
-
-        if not value:
-            value = 1
-        else:
-            try:
-                value = int(value)
-            except:
-                pass
-
-            if isinstance(value, int):
+        to_send = None
+        try:
+            if not value:
+                value = 1
+            else:
                 value = int(value)
                 value += 1
-            else:
-                return socket.sendall(self.encoder.encode('ERR value is not an integer or out of range', EncodedMessageType.ERROR))
+            to_send = self.encoder.encode(value, EncodedMessageType.INTEGER)
+        except:
+            to_send = self.encoder.encode('ERR value is not an integer or out of range', EncodedMessageType.ERROR)
         self.storage.set(key, str(value))
-
-        to_send = self.encoder.encode(value, EncodedMessageType.INTEGER)
+        
         if send_to_sock:
             socket.sendall(to_send)
         return to_send
