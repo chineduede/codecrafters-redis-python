@@ -50,6 +50,7 @@ class CommandEnum(StrEnum):
     INCR = 'incr'
     MULTI = 'multi'
     EXEC = 'exec'
+    DISCARD = 'discard'
 
 class InvalidCommandCall(Exception):
     pass
@@ -112,9 +113,12 @@ class Command:
             case CommandEnum.INCR:
                 return self.handle_incr_cmd(command_arr, socket, send_to_sock)
             case CommandEnum.MULTI:
-                return self.handle_multi_cmd(command_arr, socket)
+                return self.handle_multi_cmd(socket)
             case CommandEnum.EXEC:
-                return self.handle_exec_cmd(command_arr, socket)
+                return self.handle_exec_cmd(socket)
+            case CommandEnum.DISCARD:
+                return self.handle_discard_cmd(socket)
+
     
     def accum_proc(self, cmd_arr):
         encoded = self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY)
@@ -124,11 +128,18 @@ class Command:
         if len(args) < num:
             raise InvalidCommandCall(f'{_type.upper()} cmd must be called with enough argument(s). Called with only {num} argument(s).')
 
-    def handle_multi_cmd(self, cmd_arr, socket: socket):
+    def handle_multi_cmd(self, socket: socket):
         self.cmd_queue.start_transaction()
         socket.sendall(self.encoder.encode('OK', EncodedMessageType.SIMPLE_STRING))
 
-    def handle_exec_cmd(self, cmd_arr, socket: socket):
+    def handle_discard_cmd(self, socket: socket):
+        if not self.cmd_queue.in_transaction():
+            socket.sendall(self.encoder.encode('ERR DISCARD without MULTI', EncodedMessageType.ERROR))
+        else:
+            self.cmd_queue.end_transaction()
+            socket.sendall(self.encoder.encode('OK', EncodedMessageType.SIMPLE_STRING))
+
+    def handle_exec_cmd(self, socket: socket):
         if not self.cmd_queue.in_transaction():
             socket.sendall(self.encoder.encode('ERR EXEC without MULTI', EncodedMessageType.ERROR))
         else:
@@ -136,13 +147,10 @@ class Command:
             queued_cmds = self.cmd_queue.get_commands()
             self.cmd_queue.end_transaction()
 
-            # socket.sendall(self.encoder.encode(['OK', 12, 1, 2], EncodedMessageType.ARRAY))
-            # print('******')
             for cmd in queued_cmds:
                 ret = self.handle_cmd(cmd, socket, False)
                 response.append(ret)
 
-            print(response)
             to_send = self.encoder.encode(response, EncodedMessageType.ARRAY, already_encoded = True)
             socket.sendall(to_send)
 
