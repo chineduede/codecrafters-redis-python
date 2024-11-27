@@ -1,7 +1,7 @@
 from enum import IntEnum
 from app.commands import CommandEnum
 from app.encoder import ENCODER, EncodedMessageType
-from app.namespace import ConfigNamespace
+from app.namespace import ConfigNamespace, ServerConfig, server_config
 
 class HandShakeStates(IntEnum):
     INIT = 0
@@ -17,7 +17,7 @@ class Handshake:
         pass
 
     @classmethod
-    def handle_stage(cls, data=None | bytes):
+    def handle_stage(cls, data=None | bytes, server_config: ServerConfig | None = None):
         if cls.state == HandShakeStates.INIT:
             # initial state, send PING
             cls.state = HandShakeStates.AWAIT_PONG
@@ -39,5 +39,7 @@ class Handshake:
             return ENCODER.encode([CommandEnum.PSYNC, '?', '-1'], EncodedMessageType.ARRAY)
         if cls.state == HandShakeStates.FULLRESYNC:
             # consume and do nothing
+            if server_config:
+                server_config.finished_handshake = True
             cls.state = HandShakeStates.END
             return HandShakeStates.END

@@ -1,4 +1,6 @@
 import re
+import threading
+import threading
 from enum import StrEnum
 from socket import socket
 from typing import Any
@@ -6,9 +8,11 @@ from typing import Any
 from app.encoder import RespEncoder, EncodedMessageType, ENCODER, QUEUED
 from app.storage import RedisDB
 from app.constants import SET_ARGS, BOUNDARY
-from app.namespace import ConfigNamespace
-from app.util import decode, decode_resp
+from app.namespace import ConfigNamespace, server_config
+from app.util import decode
 from app.replicas import Replicas
+
+accum_lock = threading.Condition()
 
 class CommandQueue():
 
@@ -63,9 +67,9 @@ class Command:
     def __init__(self, *, encoder: RespEncoder = None, storage: RedisDB = None, replicas: Replicas | None = None) -> None:
         self.encoder = ENCODER
         self.storage = RedisDB() if storage is None else storage
-        self.processed_offset = 0
         self.replicas = replicas
         self.cmd_queue = CommandQueue()
+        self.in_wait_cmd = False
 
     def handle_cmd(self, command_arr: list[bytes] | bytes, socket: socket, send_to_sock = True):
         if not isinstance(command_arr, list):
@@ -121,8 +125,9 @@ class Command:
 
     
     def accum_proc(self, cmd_arr):
+        print(cmd_arr, server_config.acked_commands, ConfigNamespace.is_replica())
         encoded = self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY)
-        self.processed_offset += len(encoded)
+        server_config.acked_commands += len(encoded)
 
     def verify_args_len(self, _type, num, args):
         if len(args) < num:
@@ -154,14 +159,39 @@ class Command:
             to_send = self.encoder.encode(response, EncodedMessageType.ARRAY, already_encoded = True)
             socket.sendall(to_send)
 
+    def acked_replica_len(self, num):
+        def inner():
+            return len(server_config.acked_replicas) >= num
+        return inner
+
     def handle_wait_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.WAIT, 3, cmd_arr)
-
         no_of_replicas = int(cmd_arr[1])
         wait_ms = int(cmd_arr[2])
+        accum_bytes = False
+        
+        if not server_config.acked_commands:
+            processed = len(self.replicas)
+        else:
+            if self.get_uptodate_replicas() < no_of_replicas:
+                cmd_to_send = ['REPLCONF', 'GETACK', '*']
+                for replica in self.replicas.get_all_replicas():
+                    replica.sendall(self.encoder.encode(cmd_to_send, EncodedMessageType.ARRAY))
+                accum_bytes = True
+            # if ConfigNamespace.replica_just_conn:
+            #     processed = len(self.replicas)
+            # else:
+            with accum_lock:
+                accum_lock.wait_for(lambda : self.get_uptodate_replicas() >= no_of_replicas, wait_ms / 1000)
+                processed = self.get_uptodate_replicas()
 
-        cn_reps = str(len(self.replicas))
-        socket.sendall(self.encoder.encode(cn_reps.encode('utf-8'), EncodedMessageType.INTEGER))
+            if accum_bytes:
+                self.accum_proc(cmd_to_send)
+        socket.sendall(self.encoder.encode(str(processed).encode('utf-8'), EncodedMessageType.INTEGER))
+
+    def get_uptodate_replicas(self):
+        print(server_config.acked_replicas, server_config.acked_commands)
+        return len([x for x in server_config.acked_replicas.values() if x >= server_config.acked_commands])
 
     def handle_xread_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.XREAD, 4, cmd_arr)
@@ -261,18 +291,25 @@ class Command:
         res = self.encoder.encode('FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0', EncodedMessageType.SIMPLE_STRING)
         full_db = b'$' + str(len(EMPTY_DB)).encode('utf-8') + BOUNDARY + EMPTY_DB
         socket.sendall(res + full_db)
+        if not ConfigNamespace.is_replica():
+            ConfigNamespace.replica_just_conn = True
 
     def handle_replconf_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.REPLCONF, 2, cmd_arr)
         msg = self.encoder.encode('OK', EncodedMessageType.SIMPLE_STRING)
+
         if cmd_arr[1].lower() == b'listening-port':
-            if self.replicas:
-                self.replicas.add_replica(socket)
-        if cmd_arr[1].lower() == b'getack':
-            msg = self.encoder.encode([CommandEnum.REPLCONF, 'ACK', self.processed_offset], EncodedMessageType.ARRAY)
+            self.replicas.add_replica(socket)
+            server_config.acked_replicas[socket.getpeername()] = 0
+        if cmd_arr[1].lower() == b'ack':
+            acked_bytes = int(cmd_arr[2])
+            with accum_lock:
+                peername = socket.getpeername()
+                server_config.acked_replicas[peername] = acked_bytes
+                accum_lock.notify_all()
+            msg = None
         if msg:
             socket.sendall(msg)
-        self.accum_proc(cmd_arr)
 
     def handle_info_cmd(self, cmd_arr, socket: socket):
         return_vals = [
@@ -347,7 +384,6 @@ class Command:
                 args_dict[cmd] = other_args[idx+1]
         return args_dict
 
-    
     def handle_set_cmd(self, cmd_arr, socket: socket, send_to_sock):
         self.verify_args_len(CommandEnum.SET, 3, cmd_arr)
         if self.cmd_queue.in_transaction():
@@ -356,19 +392,10 @@ class Command:
         other_args = self.parse_set_args(cmd_arr)
         resp = self.storage.set(cmd_arr[1], cmd_arr[2], **other_args)
         msg = self.encoder.encode(resp, EncodedMessageType.SIMPLE_STRING)
-
-        if hasattr(ConfigNamespace, 'master_conn') and ConfigNamespace.master_conn is socket:
-            self.accum_proc(cmd_arr)
-        else:
-            if send_to_sock:
-                socket.sendall(msg)
-
-            if not ConfigNamespace.is_replica():
-                if self.replicas:
-                    for replica in self.replicas.get_all_replicas():
-                        replica.sendall(self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY))
+        self.accum_proc(cmd_arr)
+        if send_to_sock:
+            socket.sendall(msg)
         return msg
-
 
     def handle_echo_cmd(self, cmd_arr, socket: socket, send_to_sock: bool):
         self.verify_args_len(CommandEnum.ECHO, 2, cmd_arr)
@@ -383,10 +410,42 @@ class Command:
         return encoded_msg
 
     def handle_ping_cmd(self, socket: socket):
-        if not ConfigNamespace.is_replica():
-            socket.sendall(self.encoder.encode('PONG', EncodedMessageType.SIMPLE_STRING))
         self.accum_proc([b'PING'])
-        
 
+class MasterCommand(Command):
+
+    def __init__(self, *, encoder: RespEncoder = None, storage: RedisDB = None, replicas: Replicas | None = None) -> None:
+        super().__init__(encoder=encoder, storage=storage, replicas=replicas)
+
+    def handle_set_cmd(self, cmd_arr, socket: socket, send_to_sock):
+        msg = super().handle_set_cmd(cmd_arr, socket, send_to_sock)
+        ConfigNamespace.replica_just_conn = False
+        for replica in self.replicas.get_all_replicas():
+            replica.sendall(self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY))
+            # print(self.in_wait_cmd, threading.active_count())
+            # # if self.in_wait_cmd:
+            # replica.sendall(self.encoder.encode(['REPLCONF', 'GETACK', '*'], EncodedMessageType.ARRAY))
+        return msg
+    
+    def handle_ping_cmd(self, socket: socket):
+        if server_config.finished_handshake:
+            super().handle_ping_cmd(socket)
+        socket.sendall(self.encoder.encode('PONG', EncodedMessageType.SIMPLE_STRING))
+
+class ReplicaCommand(Command):
+
+    def __init__(self, *, encoder: RespEncoder = None, storage: RedisDB = None) -> None:
+        super().__init__(encoder=encoder, storage=storage)
+
+    def handle_replconf_cmd(self, cmd_arr, socket: socket):
+        proc_bytes = server_config.acked_commands
+        self.accum_proc(cmd_arr)
+        if cmd_arr[1].lower() == b'getack':
+            msg = self.encoder.encode([CommandEnum.REPLCONF, 'ACK', proc_bytes], EncodedMessageType.ARRAY)
+            socket.sendall(msg)
+
+    def handle_set_cmd(self, cmd_arr, socket: socket, send_to_sock):
+        print('+++++', cmd_arr, server_config.acked_commands)
+        return super().handle_set_cmd(cmd_arr, socket, False)
 
 EMPTY_DB = bytes.fromhex("524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2")

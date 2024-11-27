@@ -4,7 +4,7 @@ import argparse
 import threading
 
 from app.resp_parser import RespParser
-from app.commands import Command
+from app.commands import MasterCommand, ReplicaCommand
 from app.namespace import ConfigNamespace
 from app.handshake import Handshake, HandShakeStates
 from app.storage import RedisDB
@@ -20,12 +20,11 @@ sel = selectors.DefaultSelector()
 storage = RedisDB()
 replicas = Replicas()
 
-def handle_client(sock: socket.socket, cmd_parser: Command):
+def handle_client(sock: socket.socket, cmd_parser: MasterCommand):
     try:
         parser = RespParser()
         msg_to_propagate = []
         parsed_msg = parser.parse_all(sock, sel, msg_to_propagate)
-        # print('main read', parsed_msg)
         if parsed_msg is None:
             return
 
@@ -34,10 +33,7 @@ def handle_client(sock: socket.socket, cmd_parser: Command):
     except Exception as e:
         print(f"Exception in thread {threading.current_thread().name}: {e}")
 
-        import traceback
-        traceback.print_exc()
-
-def read(cmd_parser: Command):
+def read(cmd_parser: MasterCommand):
     def inner(sock: socket.socket):
         thread = threading.Thread(target=handle_client, args=(sock, cmd_parser))
         thread.start()
@@ -48,13 +44,13 @@ def read(cmd_parser: Command):
 def accept(sock: socket.socket):
     conn, _ = sock.accept()
     conn.setblocking(False)
-    cmd_parser = Command(storage=storage, replicas=replicas)
+    cmd_parser = MasterCommand(storage=storage, replicas=replicas)
     sel.register(conn, selectors.EVENT_READ, read(cmd_parser))
 
 
 def handle_master_data(sock: socket.socket):
     parser = RespParser()
-    cmd_parser = Command(storage=storage)
+    cmd_parser = ReplicaCommand(storage=storage)
     parsed_msg = parser.parse_all(sock, sel)
 
     if not parsed_msg:
