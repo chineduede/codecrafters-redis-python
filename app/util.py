@@ -23,7 +23,3 @@ def encode(msg: bytes | None | list | int):
     if isinstance(msg, list):
         return [encode(m) for m in msg]
     return msg
-
-def decode_resp(arr: list[bytes]):
-    res = [encode(_parser.parse(data)) for data in arr]
-    return res

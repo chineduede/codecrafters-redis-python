@@ -15,7 +15,7 @@ from app.replicas import Replicas
 accum_lock = threading.Condition()
 
 class CommandQueue():
-
+    ''' Used for MULTI cmd to store trx before being commited.'''
     def __init__(self) -> None:
         self.queue = []
         self.in_trx = False
@@ -71,12 +71,12 @@ class Command:
         self.cmd_queue = CommandQueue()
         self.in_wait_cmd = False
 
-    def handle_cmd(self, command_arr: list[bytes] | bytes, socket: socket, send_to_sock = True):
+    def handle_cmd(self, command_arr: list[bytes], socket: socket, send_to_sock = True):
         if not isinstance(command_arr, list):
-            return {}
+            return InvalidCommandCall('Must be a list of cmd bytes')
 
         if len(command_arr) < 1:
-            raise InvalidCommandCall(f'Must pass a command.')
+            raise InvalidCommandCall('Must pass a command.')
         cmd = command_arr[0].strip().lower()
 
         # prevents infinite recursion because we might
@@ -125,7 +125,8 @@ class Command:
 
     
     def accum_proc(self, cmd_arr):
-        print(cmd_arr, server_config.acked_commands, ConfigNamespace.is_replica())
+        '''Accumulates the cmd bytes that have been processed by the server.
+        Currently only used when PINGing replica, REPLCONF and SET'''
         encoded = self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY)
         server_config.acked_commands += len(encoded)
 
@@ -159,28 +160,25 @@ class Command:
             to_send = self.encoder.encode(response, EncodedMessageType.ARRAY, already_encoded = True)
             socket.sendall(to_send)
 
-    def acked_replica_len(self, num):
-        def inner():
-            return len(server_config.acked_replicas) >= num
-        return inner
-
     def handle_wait_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.WAIT, 3, cmd_arr)
         no_of_replicas = int(cmd_arr[1])
         wait_ms = int(cmd_arr[2])
-        accum_bytes = False
+        accum_bytes = False # Flag needed below to determi
         
+        # We havent sent any commands, so we always return no of replicas
+        # regardless of args
         if not server_config.acked_commands:
             processed = len(self.replicas)
         else:
+            # some replicas are lagging behind, check if we need to send GETACK
             if self.get_uptodate_replicas() < no_of_replicas:
                 cmd_to_send = ['REPLCONF', 'GETACK', '*']
                 for replica in self.replicas.get_all_replicas():
                     replica.sendall(self.encoder.encode(cmd_to_send, EncodedMessageType.ARRAY))
                 accum_bytes = True
-            # if ConfigNamespace.replica_just_conn:
-            #     processed = len(self.replicas)
-            # else:
+            # We use a condition here to lock this thread until time expires or required number of
+            # replicas acknowledge they are up to date
             with accum_lock:
                 accum_lock.wait_for(lambda : self.get_uptodate_replicas() >= no_of_replicas, wait_ms / 1000)
                 processed = self.get_uptodate_replicas()
@@ -190,7 +188,7 @@ class Command:
         socket.sendall(self.encoder.encode(str(processed).encode('utf-8'), EncodedMessageType.INTEGER))
 
     def get_uptodate_replicas(self):
-        print(server_config.acked_replicas, server_config.acked_commands)
+        '''Check if any replicas are lagging behind, if any, we return the number, we do GETACK for all though'''
         return len([x for x in server_config.acked_replicas.values() if x >= server_config.acked_commands])
 
     def handle_xread_cmd(self, cmd_arr, socket: socket):
@@ -198,6 +196,7 @@ class Command:
         
         cmd_arr = [decode(x) for x in cmd_arr]
 
+        # In a MULTI trx, queue cmd
         if self.cmd_queue.in_transaction():
             self.cmd_queue.add_command(cmd_arr)
             return socket.sendall(QUEUED)
@@ -291,18 +290,20 @@ class Command:
         res = self.encoder.encode('FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0', EncodedMessageType.SIMPLE_STRING)
         full_db = b'$' + str(len(EMPTY_DB)).encode('utf-8') + BOUNDARY + EMPTY_DB
         socket.sendall(res + full_db)
-        if not ConfigNamespace.is_replica():
-            ConfigNamespace.replica_just_conn = True
 
     def handle_replconf_cmd(self, cmd_arr, socket: socket):
         self.verify_args_len(CommandEnum.REPLCONF, 2, cmd_arr)
         msg = self.encoder.encode('OK', EncodedMessageType.SIMPLE_STRING)
 
         if cmd_arr[1].lower() == b'listening-port':
+            # A replica has connected to master, add to list of replicas,
+            # also maintain a map of replica to ack bytes.
             self.replicas.add_replica(socket)
             server_config.acked_replicas[socket.getpeername()] = 0
         if cmd_arr[1].lower() == b'ack':
             acked_bytes = int(cmd_arr[2])
+            # acquire lock for thread, we send GETACKS in WAIT cmd, updated with
+            # latest replica offset, wakeup sleeping thread
             with accum_lock:
                 peername = socket.getpeername()
                 server_config.acked_replicas[peername] = acked_bytes
@@ -419,15 +420,13 @@ class MasterCommand(Command):
 
     def handle_set_cmd(self, cmd_arr, socket: socket, send_to_sock):
         msg = super().handle_set_cmd(cmd_arr, socket, send_to_sock)
-        ConfigNamespace.replica_just_conn = False
         for replica in self.replicas.get_all_replicas():
             replica.sendall(self.encoder.encode(cmd_arr, EncodedMessageType.ARRAY))
-            # print(self.in_wait_cmd, threading.active_count())
-            # # if self.in_wait_cmd:
-            # replica.sendall(self.encoder.encode(['REPLCONF', 'GETACK', '*'], EncodedMessageType.ARRAY))
         return msg
     
     def handle_ping_cmd(self, socket: socket):
+        # Initially, replica sends PING cmd to master during handshake phase,
+        # we dont need to add to processed bytes for master
         if server_config.finished_handshake:
             super().handle_ping_cmd(socket)
         socket.sendall(self.encoder.encode('PONG', EncodedMessageType.SIMPLE_STRING))
@@ -445,7 +444,7 @@ class ReplicaCommand(Command):
             socket.sendall(msg)
 
     def handle_set_cmd(self, cmd_arr, socket: socket, send_to_sock):
-        print('+++++', cmd_arr, server_config.acked_commands)
+        # SET handling cmd in replica should not send reply to master
         return super().handle_set_cmd(cmd_arr, socket, False)
 
 EMPTY_DB = bytes.fromhex("524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2")

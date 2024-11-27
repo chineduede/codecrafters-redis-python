@@ -117,8 +117,7 @@ class RDBParser:
 
         # read value
         val_len, val_as_int = self.len_encode_read_bytes(self.buffer.read(1))
-        
-        # print(self.buffer.read(val_len))
+
         val = self.buffer.read(val_len)
         if not val_as_int:
             val = val.decode()

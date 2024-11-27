@@ -16,5 +16,4 @@ class ServerConfig:
     acked_commands = 0
     finished_handshake = False
 
-
 server_config = ServerConfig()

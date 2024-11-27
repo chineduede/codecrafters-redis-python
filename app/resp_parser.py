@@ -60,7 +60,7 @@ class RespParser:
         top_arr['items'].append(ele)
         self.current_state = States.READ_ARR_ELE
 
-    def parse_all(self, sock: socket, selector: BaseSelector | None = None, msg_to_propagate: list[bytes] | None = None):
+    def parse_all(self, sock: socket, selector: BaseSelector | None = None):
         buffer = b''
         while True:
             try:
@@ -73,10 +73,6 @@ class RespParser:
                 buffer += chunk
             except BlockingIOError:
                 break
-
-        if msg_to_propagate is not None:
-            msg_to_propagate.append(buffer)
-
         return self.parse_multiple(buffer)
 
     def parse_multiple(self, data: bytes):

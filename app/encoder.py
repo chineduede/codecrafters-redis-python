@@ -2,6 +2,8 @@ from enum import IntEnum
 from app.constants import BOUNDARY, STRING, ARRAY, BULK_STRING, NULL_BULK_STR, INTEGER, ERR
 from app.util import encode
 
+QUEUED = b'+QUEUED\r\n'
+
 class EncodedMessageType(IntEnum):
     SIMPLE_STRING = 0
     BULK_STRING = 1
@@ -61,6 +63,5 @@ class RespEncoder:
     
 
 ENCODER = RespEncoder()
-QUEUED = b'+QUEUED\r\n'
 # if __name__ == "__main__":
     # print(encoder.encode(['red', 'blue'], EncodedMessageType.ARRAY))

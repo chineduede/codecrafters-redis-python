@@ -5,7 +5,7 @@ import threading
 
 from app.resp_parser import RespParser
 from app.commands import MasterCommand, ReplicaCommand
-from app.namespace import ConfigNamespace
+from app.namespace import ConfigNamespace, server_config
 from app.handshake import Handshake, HandShakeStates
 from app.storage import RedisDB
 from app.replicas import Replicas
@@ -23,8 +23,7 @@ replicas = Replicas()
 def handle_client(sock: socket.socket, cmd_parser: MasterCommand):
     try:
         parser = RespParser()
-        msg_to_propagate = []
-        parsed_msg = parser.parse_all(sock, sel, msg_to_propagate)
+        parsed_msg = parser.parse_all(sock, sel)
         if parsed_msg is None:
             return
 
@@ -33,11 +32,11 @@ def handle_client(sock: socket.socket, cmd_parser: MasterCommand):
     except Exception as e:
         print(f"Exception in thread {threading.current_thread().name}: {e}")
 
+
 def read(cmd_parser: MasterCommand):
     def inner(sock: socket.socket):
         thread = threading.Thread(target=handle_client, args=(sock, cmd_parser))
         thread.start()
-
     return inner
 
 
